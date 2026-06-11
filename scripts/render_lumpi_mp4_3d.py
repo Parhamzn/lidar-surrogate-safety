@@ -82,6 +82,17 @@ def main():
     trails: dict[int, deque] = defaultdict(
         lambda: deque(maxlen=int(TRAIL_SECONDS * FPS)))
     trail_cls: dict[int, str] = {}
+    trail_last: dict[int, int] = {}    # last frame each object was seen
+
+    def append_trail(oid, fidx, point):
+        """Track-gap aware: a time gap or an impossible jump starts a new
+        trail instead of drawing a screen-spanning chord."""
+        d = trails[oid]
+        if d and (fidx - trail_last.get(oid, fidx) > 5
+                  or np.hypot(point[0] - d[-1][0], point[1] - d[-1][1]) > 3.0):
+            d.clear()
+        d.append(point)
+        trail_last[oid] = fidx
 
     frame_ids = sorted(frames)
     writer = None
@@ -92,13 +103,19 @@ def main():
     fig = plt.figure(figsize=(12.8, 7.2), dpi=100)
     fig.patch.set_facecolor(BG)
     ax = fig.add_subplot(projection='3d')
+    # figure-level artists survive ax.clear(): create once, update per frame
+    time_text = fig.text(0.04, 0.94, '', color='white',
+                         fontsize=14, family='monospace')
+    legend_handles = [plt.Line2D([], [], color=mpl_color(c), lw=3, label=c)
+                      for c in ('car', 'truck', 'bus', 'pedestrian',
+                                'bicycle', 'motorcycle', 'scooter')]
 
     for n, fidx in enumerate(frame_ids):
         t = fidx / FPS
         # trails accumulate over all frames, drawing happens per frame
         for r in frames[fidx]:
             oid, cls = int(r[1]), LUMPI_CLASSES.get(int(r[7]), 'unknown')
-            trails[oid].append((r[9], r[10], r[11] - r[14] / 2 + 0.15))
+            append_trail(oid, fidx, (r[9], r[10], r[11] - r[14] / 2 + 0.15))
             trail_cls[oid] = cls
         if args.still is not None and fidx != args.still:
             continue
@@ -121,7 +138,8 @@ def main():
                            c='#62626e', linewidths=0, depthshade=False)
 
         for oid, hist in trails.items():
-            if len(hist) >= 2:
+            # only objects still present keep a visible trail
+            if len(hist) >= 2 and fidx - trail_last.get(oid, -99) <= 3:
                 arr = np.asarray(hist)
                 ax.plot(arr[:, 0], arr[:, 1], arr[:, 2], '-', lw=1.6,
                         color=mpl_color(trail_cls[oid]), alpha=0.75)
@@ -155,8 +173,10 @@ def main():
                           zoom=args.zoom)
         ax.view_init(elev=args.elev, azim=args.azim)
         ax.set_axis_off()
-        fig.text(0.04, 0.94, f't = {t:6.1f} s', color='white',
-                 fontsize=14, family='monospace')
+        time_text.set_text(f't = {t:6.1f} s')
+        ax.legend(handles=legend_handles, loc='lower right', fontsize=9,
+                  framealpha=0.15, labelcolor='white', facecolor=BG,
+                  edgecolor='none')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
         if args.still is not None:

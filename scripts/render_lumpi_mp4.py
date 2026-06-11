@@ -67,6 +67,17 @@ def main():
     trails: dict[int, deque] = defaultdict(
         lambda: deque(maxlen=int(TRAIL_SECONDS * FPS)))
     trail_cls: dict[int, str] = {}
+    trail_last: dict[int, int] = {}
+
+    def append_trail(oid, fidx, point):
+        """Track-gap aware: a time gap or an impossible jump starts a new
+        trail instead of drawing a long phantom chord."""
+        d = trails[oid]
+        if d and (fidx - trail_last.get(oid, fidx) > 5
+                  or np.hypot(point[0] - d[-1][0], point[1] - d[-1][1]) > 3.0):
+            d.clear()
+        d.append(point)
+        trail_last[oid] = fidx
 
     writer = imageio.get_writer(args.out, fps=FPS, codec='libx264',
                                 quality=8, macro_block_size=1)
@@ -88,11 +99,12 @@ def main():
 
         for r in frames[fidx]:
             oid, cls = int(r[1]), LUMPI_CLASSES.get(int(r[7]), 'unknown')
-            trails[oid].append((r[9], r[10]))
+            append_trail(oid, fidx, (r[9], r[10]))
             trail_cls[oid] = cls
 
         for oid, pts_hist in trails.items():
-            if len(pts_hist) >= 2:
+            # only objects still present keep a visible trail
+            if len(pts_hist) >= 2 and fidx - trail_last.get(oid, -99) <= 3:
                 arr = np.asarray(pts_hist)
                 ax.plot(arr[:, 0], arr[:, 1], '-', lw=1.4,
                         color=mpl_color(trail_cls[oid]), alpha=0.65)
