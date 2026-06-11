@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lidar-pilot"
+version = "0.1.0"
+description = "LiDAR vehicle/VRU detection, tracking, kinematics and surrogate safety metrics (TTC, PET, hard-braking)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24,<2",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+viz = ["rerun-sdk", "matplotlib", "open3d"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
