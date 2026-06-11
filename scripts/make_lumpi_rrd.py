@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from collections import defaultdict
 from pathlib import Path
 
@@ -57,12 +58,42 @@ def main():
     ap.add_argument('--end', type=float, required=True)
     ap.add_argument('--lidar-dir', default=None)
     ap.add_argument('--point-stride', type=int, default=3)
+    ap.add_argument('--ref-cloud', default=None,
+                    help='UTM reference scan (ply) as a static backdrop')
+    ap.add_argument('--georef', default=None,
+                    help='georef.json (required with --ref-cloud)')
+    ap.add_argument('--ref-stride', type=int, default=2)
     args = ap.parse_args()
 
     import rerun as rr
     rr.init('lumpi', spawn=False)
     rec = rr.new_recording('lumpi')
     rr.save(args.out, recording=rec)
+
+    if args.ref_cloud:
+        # Static survey-scan backdrop, shifted into the label frame: raw
+        # UTM magnitudes (~5.8e6 m) would destroy float32 view precision.
+        from plyfile import PlyData
+        g = json.load(open(args.georef))
+        off = np.array([g['t'][0] + g['utm_offset'][0],
+                        g['t'][1] + g['utm_offset'][1],
+                        g['z_offset']])
+        v = PlyData.read(args.ref_cloud)['vertex']
+        pts = (np.column_stack([v['x'], v['y'], v['z']]).astype(np.float64)
+               - off)[::args.ref_stride].astype(np.float32)
+        refl = np.asarray(v['reflectance'], float)[::args.ref_stride]
+        lo, hi = np.percentile(refl, [2, 98])
+        grey = (55 + 175 * np.clip((refl - lo) / (hi - lo), 0, 1)).astype(np.uint8)
+        colors = np.stack([grey, grey, grey], axis=1)
+        try:
+            rr.log('world/refmap',
+                   rr.Points3D(pts, radii=0.02, colors=colors),
+                   static=True, recording=rec)
+        except TypeError:
+            rr.log('world/refmap',
+                   rr.Points3D(pts, radii=0.02, colors=colors),
+                   timeless=True, recording=rec)
+        print(f'logged reference scan: {len(pts)} points')
 
     frames = load_rows(args.label_csv, args.start, args.end)
     lidar_dir = Path(args.lidar_dir) if args.lidar_dir else None
