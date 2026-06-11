@@ -35,6 +35,28 @@ def mpl_color(cls):
     return (r / 255, g / 255, b / 255)
 
 
+def clip_polyline(arr, cx, cy, half):
+    """Split a polyline into runs of points inside the view box.
+
+    Matplotlib's 3D axes do no clipping: artists outside the axis limits
+    are still projected and drawn, so off-view trails become long streaks
+    across the frame. Points are ~0.1 s apart, so dropping out-of-box
+    points (instead of exact geometric clipping) is visually clean.
+    """
+    inside = (np.abs(arr[:, 0] - cx) < half) & (np.abs(arr[:, 1] - cy) < half)
+    runs, cur = [], []
+    for p, ok in zip(arr, inside):
+        if ok:
+            cur.append(p)
+        else:
+            if len(cur) >= 2:
+                runs.append(np.asarray(cur))
+            cur = []
+    if len(cur) >= 2:
+        runs.append(np.asarray(cur))
+    return runs
+
+
 def box_edges(cx, cy, zc, l, w, h, yaw):
     """12 wireframe segments of an oriented 3D box (center z convention)."""
     c, s = np.cos(yaw), np.sin(yaw)
@@ -140,14 +162,17 @@ def main():
         for oid, hist in trails.items():
             # only objects still present keep a visible trail
             if len(hist) >= 2 and fidx - trail_last.get(oid, -99) <= 3:
-                arr = np.asarray(hist)
-                ax.plot(arr[:, 0], arr[:, 1], arr[:, 2], '-', lw=1.6,
-                        color=mpl_color(trail_cls[oid]), alpha=0.75)
+                for run in clip_polyline(np.asarray(hist), cx, cy, half):
+                    ax.plot(run[:, 0], run[:, 1], run[:, 2], '-', lw=1.6,
+                            color=mpl_color(trail_cls[oid]), alpha=0.75)
 
         plain_segs, plain_colors = [], []
         hl_rank = {oid: k for k, oid in enumerate(sorted(highlight))}
         for r in frames[fidx]:
             oid, cls = int(r[1]), LUMPI_CLASSES.get(int(r[7]), 'unknown')
+            # mpl3d draws outside the limits: cull off-view boxes manually
+            if abs(r[9] - cx) > half + 3 or abs(r[10] - cy) > half + 3:
+                continue
             segs = box_edges(r[9], r[10], r[11], r[12], r[13], r[14], r[15])
             if oid in highlight:
                 ax.add_collection3d(Line3DCollection(
