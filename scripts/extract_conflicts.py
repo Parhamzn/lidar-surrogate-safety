@@ -26,9 +26,20 @@ MIN_TRACK_LEN = 5          # samples
 MIN_DISPLACEMENT = 3.0     # m net displacement: separates genuinely moving
                            # users from association jitter on parked objects
                            # (peak instantaneous speed is fooled by jitter)
+MIN_PATH_EFFICIENCY = 0.4  # net displacement / path length: a real mover
+                           # goes somewhere (~1.0; U-turn ~0.5); a track
+                           # wandering across a bike rack does not (~0.2)
 MIN_BRAKE_SPEED = 3.0      # m/s: braking from walking pace is not an HBE
 SEVERE_TTC = 3.0           # s, report TTC conflicts below this
 SEVERE_PET = 3.0           # s, report PET events below this
+
+
+def is_moving_road_user(tr) -> bool:
+    disp = np.linalg.norm(tr.xy - tr.xy[0], axis=1).max()
+    if disp < MIN_DISPLACEMENT:
+        return False
+    path_len = float(np.linalg.norm(np.diff(tr.xy, axis=0), axis=1).sum())
+    return disp / max(path_len, 1e-9) >= MIN_PATH_EFFICIENCY
 
 
 def bboxes_overlap(a, b, margin=3.0) -> bool:
@@ -46,8 +57,7 @@ def main(outputs_dir: str):
         all_trajs = [tr for tr in pickle.load(open(pkl, 'rb')) if len(tr) >= MIN_TRACK_LEN]
         # Surrogate conflicts are interactions between moving road users;
         # parked vehicles and bike racks are scenery, not conflict parties.
-        trajs = [tr for tr in all_trajs
-                 if np.linalg.norm(tr.xy - tr.xy[0], axis=1).max() >= MIN_DISPLACEMENT]
+        trajs = [tr for tr in all_trajs if is_moving_road_user(tr)]
 
         n_pairs = n_ttc = n_pet = 0
         for a, b in combinations(trajs, 2):
@@ -56,7 +66,9 @@ def main(outputs_dir: str):
             n_pairs += 1
             if a.overlap_window(b) is not None:
                 res = min_ttc(a, b)
-                if res is not None and res.min_ttc < SEVERE_TTC:
+                # TTC == 0 means overlapping boxes; with no real collisions
+                # in the data that is a detection artifact by construction.
+                if res is not None and 0.0 < res.min_ttc < SEVERE_TTC:
                     n_ttc += 1
                     rows.append([scene, 'TTC', f'{res.min_ttc:.2f}', f'{res.t_at_min:.1f}',
                                  a.track_id, a.label, b.track_id, b.label])

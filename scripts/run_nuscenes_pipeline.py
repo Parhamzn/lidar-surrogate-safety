@@ -98,26 +98,35 @@ def gt_objects(nusc, sample):
 
 
 class RerunLogger:
-    """Thin wrapper so the pipeline never depends on rerun API details."""
+    """Per-scene rerun recording (pinned rerun-sdk 0.18.x, numpy<2 era).
+
+    Uses an explicit RecordingStream per scene; re-initialising the global
+    recording once per scene deadlocked rerun's batcher threads.
+    """
+
+    _initialised = False
 
     def __init__(self, path: Path):
         import rerun as rr
         self.rr = rr
-        rr.init('lidar_pilot', spawn=False)
-        rr.save(str(path))
+        if not RerunLogger._initialised:
+            rr.init('lidar_pilot', spawn=False)   # enables the SDK globally
+            RerunLogger._initialised = True
+        self.rec = rr.new_recording('lidar_pilot')
+        rr.save(str(path), recording=self.rec)
         self.trails: dict[int, list] = {}
 
+    def close(self) -> None:
+        self.rec.flush(blocking=True)
+
     def set_time(self, t: float) -> None:
-        rr = self.rr
-        if hasattr(rr, 'set_time_seconds'):
-            rr.set_time_seconds('t', t)
-        else:  # rerun >= 0.23
-            rr.set_time('t', duration=t)
+        self.rr.set_time_seconds('t', t, recording=self.rec)
 
     def log_frame(self, points_global, tracks):
         rr = self.rr
         rr.log('world/points', rr.Points3D(points_global[::4, :3],
-                                           radii=0.03, colors=(160, 160, 170)))
+                                           radii=0.03, colors=(160, 160, 170)),
+               recording=self.rec)
         centers, half_sizes, quats, colors, labels = [], [], [], [], []
         for tr in tracks:
             x, y, z, yaw, l, w, h = tr.kf.box
@@ -130,12 +139,14 @@ class RerunLogger:
             self.trails.setdefault(tr.track_id, []).append([x, y, z + h / 2])
         if centers:
             rr.log('world/tracks', rr.Boxes3D(centers=centers, half_sizes=half_sizes,
-                                              quaternions=quats, colors=colors,
-                                              labels=labels))
+                                              rotations=quats, colors=colors,
+                                              labels=labels),
+                   recording=self.rec)
         strips = [np.asarray(v) for v in self.trails.values() if len(v) >= 2]
         if strips:
             rr.log('world/trails', rr.LineStrips3D(strips, radii=0.06,
-                                                   colors=(255, 230, 60)))
+                                                   colors=(255, 230, 60)),
+                   recording=self.rec)
 
 
 # Per-class association gates (metres) for 2 Hz keyframes: roughly the
@@ -209,6 +220,8 @@ def run_scene(nusc, inferencer, scene, out_dir: Path, rrd: bool,
             break
         sample = nusc.get('sample', sample['next'])
 
+    if logger:
+        logger.close()
     dt = (time.perf_counter() - wall0) / max(n_frames, 1)
     trajs = tracker.trajectories
     with open(out_dir / f"tracks_{scene['name']}.pkl", 'wb') as f:
