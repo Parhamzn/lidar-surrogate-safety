@@ -50,6 +50,37 @@ def read_ply_xyz(path):
     return np.column_stack([v['x'], v['y'], v['z']])
 
 
+def crop_object_points(pts, rows, margin=0.25):
+    """Points inside the frame's labeled boxes, with per-point class color.
+
+    Used over the static reference scan: the survey backdrop replaces the
+    static scene, so only the moving objects' own returns are drawn.
+    """
+    out_pts, out_col = [], []
+    for r in rows:
+        cx, cy, cz = r[9], r[10], r[11]
+        l, w, h, yaw = r[12], r[13], r[14], r[15]
+        rad = np.hypot(l, w) / 2 + margin
+        m0 = ((np.abs(pts[:, 0] - cx) < rad)
+              & (np.abs(pts[:, 1] - cy) < rad))
+        sub = pts[m0]
+        if not sub.size:
+            continue
+        dx, dy = sub[:, 0] - cx, sub[:, 1] - cy
+        c, s = np.cos(yaw), np.sin(yaw)
+        bx, by = c * dx + s * dy, -s * dx + c * dy
+        m = ((np.abs(bx) < l / 2 + margin) & (np.abs(by) < w / 2 + margin)
+             & (np.abs(sub[:, 2] - cz) < h / 2 + margin))
+        if m.any():
+            cls = LUMPI_CLASSES.get(int(r[7]), 'unknown')
+            out_pts.append(sub[m])
+            out_col.append(np.tile(CLASS_COLORS.get(cls, (200, 200, 200)),
+                                   (int(m.sum()), 1)))
+    if not out_pts:
+        return np.zeros((0, 3)), np.zeros((0, 3), np.uint8)
+    return np.vstack(out_pts), np.vstack(out_col).astype(np.uint8)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('label_csv')
@@ -107,11 +138,21 @@ def main():
         if lidar_dir is not None:
             ply = lidar_dir / f'{fidx:06d}.ply'
             if ply.exists():
-                pts = read_ply_xyz(ply)[::args.point_stride]
-                keep = np.linalg.norm(pts[:, :2], axis=1) < 120  # trim far noise
-                rr.log('world/points',
-                       rr.Points3D(pts[keep], radii=0.04, colors=(165, 165, 175)),
-                       recording=rec)
+                if args.ref_cloud:
+                    # static backdrop present: draw only the moving
+                    # objects' own returns, class-colored
+                    pts = read_ply_xyz(ply)
+                    obj_pts, obj_col = crop_object_points(pts, frames[fidx])
+                    rr.log('world/object_points',
+                           rr.Points3D(obj_pts, radii=0.05, colors=obj_col),
+                           recording=rec)
+                else:
+                    pts = read_ply_xyz(ply)[::args.point_stride]
+                    keep = np.linalg.norm(pts[:, :2], axis=1) < 120
+                    rr.log('world/points',
+                           rr.Points3D(pts[keep], radii=0.04,
+                                       colors=(165, 165, 175)),
+                           recording=rec)
 
         centers, half_sizes, quats, colors, labels = [], [], [], [], []
         for r in frames[fidx]:
