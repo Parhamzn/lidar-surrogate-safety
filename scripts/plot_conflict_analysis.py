@@ -44,36 +44,53 @@ def main(outputs_dir: str):
         scene_rows = [r for r in rows if r['scene'] == name]
         trajs = pickle.load(open(pkl, 'rb'))
 
-        # ---- conflict map: serious conflicts only ----
-        # TTC below 1.5 s is the conventional serious-conflict cutoff; the
-        # same threshold is used for PET to keep the map readable. The full
-        # 0-3 s range stays in the histograms.
+        # ---- conflict map: one density panel per metric ----
+        # Hotspot density communicates "where is risky" better than piles
+        # of overlapping markers; only the extreme tail is drawn as
+        # individual events. TTC/PET capped at the 1.5 s serious-conflict
+        # threshold for inclusion; the full range stays in the histograms.
         SERIOUS = 1.5
-        fig, ax = plt.subplots(figsize=(9, 9))
-        for tr in trajs:
-            if len(tr) >= 5:
-                ax.plot(tr.xy[:, 0], tr.xy[:, 1], '-', color='0.82', lw=0.5,
-                        alpha=0.5, zorder=1)
-        markers = {'TTC': ('o', 'Reds_r'), 'PET': ('s', 'Purples_r'),
-                   'HBE': ('^', 'Blues_r')}
-        for metric, (marker, cmap) in markers.items():
+        N_EXTREME = 25      # circle only the N most severe events per panel
+        CMAPS = {'TTC': 'Reds', 'PET': 'Purples', 'HBE': 'Blues'}
+
+        from matplotlib.collections import LineCollection
+        traj_lines = [tr.xy for tr in trajs if len(tr) >= 5]
+        all_pts = np.vstack(traj_lines)
+        x_lim = (all_pts[:, 0].min() - 5, all_pts[:, 0].max() + 5)
+        y_lim = (all_pts[:, 1].min() - 5, all_pts[:, 1].max() + 5)
+
+        fig, axes_map = plt.subplots(1, 3, figsize=(16.5, 6.2),
+                                     sharex=True, sharey=True)
+        for ax, metric in zip(axes_map, ('TTC', 'PET', 'HBE')):
+            ax.add_collection(LineCollection(traj_lines, colors='0.85',
+                                             linewidths=0.4, alpha=0.5,
+                                             zorder=1))
             ev = [r for r in scene_rows if r['metric'] == metric and r['x']
                   and (metric == 'HBE' or float(r['value']) <= SERIOUS)]
-            if not ev:
-                continue
-            x = np.array([float(r['x']) for r in ev])
-            y = np.array([float(r['y']) for r in ev])
-            v = np.array([abs(float(r['value'])) for r in ev])
-            sc = ax.scatter(x, y, c=v, cmap=cmap, marker=marker, s=46,
-                            edgecolors='k', linewidths=0.4, zorder=3,
-                            label=f'{metric} (n={len(ev)})')
-            plt.colorbar(sc, ax=ax, shrink=0.55, pad=0.01,
-                         label=f'{metric} severity '
-                               f'[{"m/s²" if metric == "HBE" else "s"}]')
-        ax.set_aspect('equal'); ax.grid(alpha=0.2)
-        ax.set_xlabel('x [m]'); ax.set_ylabel('y [m]')
-        ax.set_title(f'{name}: conflict map (grey = all trajectories)')
-        ax.legend(loc='upper left', fontsize=9)
+            if ev:
+                x = np.array([float(r['x']) for r in ev])
+                y = np.array([float(r['y']) for r in ev])
+                v = np.array([float(r['value']) for r in ev])
+                hb = ax.hexbin(x, y, gridsize=34, cmap=CMAPS[metric],
+                               mincnt=1, zorder=2,
+                               extent=(*x_lim, *y_lim))
+                plt.colorbar(hb, ax=ax, shrink=0.8, pad=0.015,
+                             label='events per cell')
+                # severity ranks: small is severe for TTC/PET, large
+                # (negative) deceleration is severe for HBE
+                order = np.argsort(v if metric != 'HBE' else -np.abs(v))
+                top = order[:N_EXTREME]
+                ax.scatter(x[top], y[top], s=48, marker='o', facecolor='none',
+                           edgecolors='black', linewidths=1.2, zorder=3,
+                           label=f'{len(top)} most severe')
+                ax.legend(loc='upper left', fontsize=9)
+            ax.set_title(f'{metric} (n={len(ev)})')
+            ax.set_xlim(*x_lim), ax.set_ylim(*y_lim)
+            ax.set_aspect('equal')
+            ax.set_xlabel('x [m]')
+        axes_map[0].set_ylabel('y [m]')
+        fig.suptitle(f'{name}: conflict hotspots (grey = all trajectories)',
+                     y=0.98)
         fig.tight_layout()
         fig.savefig(fig_dir / f'conflict_map_{name}.png', dpi=200)
         plt.close(fig)
