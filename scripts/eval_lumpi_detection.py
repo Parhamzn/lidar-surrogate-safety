@@ -36,6 +36,9 @@ import numpy as np
 FPS = 10
 NUS_CLASSES = ['car', 'truck', 'trailer', 'bus', 'construction_vehicle',
                'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone', 'barrier']
+# class order used by the LUMPI fine-tuned head (see configs/)
+LUMPI_TRAIN_CLASSES = ['car', 'truck', 'bus', 'pedestrian', 'bicycle',
+                       'motorcycle', 'scooter']
 LUMPI_CLASSES = {0: 'pedestrian', 1: 'car', 2: 'bicycle', 3: 'motorcycle',
                  4: 'bus', 5: 'truck', 6: 'scooter'}
 SHARED = ['car', 'truck', 'bus', 'pedestrian', 'bicycle', 'motorcycle']
@@ -75,22 +78,22 @@ def estimate_z_shift(ply_path):
     return float(NUS_GROUND_Z - ground)
 
 
-def match_frame(dets, gts, max_dist=2.0):
-    """Greedy per-class matching. dets: (cls, x, y, score) sorted globally
-    by score desc; gts: (cls, x, y). Returns tp, fp, fn, ignored per class."""
-    stats = {c: dict(tp=0, fp=0, fn=0) for c in SHARED}
+def match_frame(dets, gts, scored, max_dist=2.0):
+    """Greedy per-class matching. dets: (cls, x, y, score); gts: (cls, x, y).
+    Classes in `scored` are evaluated; GT of unscored classes (e.g. scooter
+    for the nuScenes head) form ignore regions."""
+    stats = {c: dict(tp=0, fp=0, fn=0) for c in scored}
     n_other = 0
     gt_used = [False] * len(gts)
-    scooters = [(i, g) for i, g in enumerate(gts) if g[0] == 'scooter']
+    ignore_gts = [(i, g) for i, g in enumerate(gts) if g[0] not in scored]
 
     for cls, x, y, _ in sorted(dets, key=lambda d: -d[3]):
-        # scooter ignore region: any detection on top of a scooter GT is
-        # dropped from scoring regardless of its class
-        near_scooter = any(not gt_used[i] and np.hypot(x - g[1], y - g[2]) <= max_dist
-                           for i, g in scooters)
-        if near_scooter:
+        # ignore region: a detection on top of an unscored-class GT is
+        # dropped from scoring regardless of its predicted class
+        if any(not gt_used[i] and np.hypot(x - g[1], y - g[2]) <= max_dist
+               for i, g in ignore_gts):
             continue
-        if cls not in SHARED:
+        if cls not in scored:
             n_other += 1
             continue
         best_i, best_d = None, max_dist
@@ -107,7 +110,7 @@ def match_frame(dets, gts, max_dist=2.0):
             stats[cls]['tp'] += 1
 
     for i, (gcls, _, _) in enumerate(gts):
-        if not gt_used[i] and gcls in SHARED:
+        if not gt_used[i] and gcls in scored:
             stats[gcls]['fn'] += 1
     return stats, n_other
 
@@ -122,16 +125,26 @@ def main():
     ap.add_argument('--checkpoint', default='/mnt/T9/parham/lidar-pilot/checkpoints/'
                     'centerpoint_02pillar_second_secfpn_circlenms_4x8_cyclic_20e_nus_20220811_031844-191a3822.pth')
     ap.add_argument('--stride', type=int, default=1, help='use every Nth frame')
+    ap.add_argument('--frame-min', type=int, default=0)
+    ap.add_argument('--frame-max', type=int, default=10**9)
+    ap.add_argument('--det-classes', choices=['nuscenes', 'lumpi'],
+                    default='nuscenes',
+                    help='class list of the checkpoint head')
     ap.add_argument('--score-thr', type=float, default=0.3)
     ap.add_argument('--max-range', type=float, default=50.0)
     ap.add_argument('--z-shift', default='auto')
     ap.add_argument('--tag', default='pretrained')
     args = ap.parse_args()
 
+    det_class_list = (NUS_CLASSES if args.det_classes == 'nuscenes'
+                      else LUMPI_TRAIN_CLASSES)
+    scored = SHARED + (['scooter'] if args.det_classes == 'lumpi' else [])
+
     lidar_dir = Path(args.lidar_dir)
-    plys = sorted(lidar_dir.glob('*.ply'))[::args.stride]
+    plys = [p for p in sorted(lidar_dir.glob('*.ply'))
+            if args.frame_min <= int(p.stem) <= args.frame_max][::args.stride]
     if not plys:
-        raise SystemExit(f'no .ply files in {lidar_dir}')
+        raise SystemExit(f'no .ply files in {lidar_dir} within frame range')
 
     z_shift = (estimate_z_shift(plys[0]) if args.z_shift == 'auto'
                else float(args.z_shift))
@@ -144,7 +157,7 @@ def main():
     inf.show_progress = False
 
     labels = load_labels_by_frame(args.label_csv)
-    totals = {c: dict(tp=0, fp=0, fn=0) for c in SHARED}
+    totals = {c: dict(tp=0, fp=0, fn=0) for c in scored}
     n_other_total = 0
     per_frame_dets = {}
 
@@ -158,16 +171,16 @@ def main():
         scores = np.asarray(p['scores_3d'], float)
         cls_ids = np.asarray(p['labels_3d'], int)
 
-        dets = [(NUS_CLASSES[c], b[0], b[1], s)
+        dets = [(det_class_list[c], b[0], b[1], s)
                 for b, s, c in zip(boxes, scores, cls_ids)
                 if s >= args.score_thr and np.hypot(b[0], b[1]) <= args.max_range]
         gts = [(c, x, y) for c, x, y in labels.get(fidx, [])
                if np.hypot(x, y) <= args.max_range]
         per_frame_dets[fidx] = dets
 
-        stats, n_other = match_frame(dets, gts)
+        stats, n_other = match_frame(dets, gts, scored)
         n_other_total += n_other
-        for c in SHARED:
+        for c in scored:
             for k in ('tp', 'fp', 'fn'):
                 totals[c][k] += stats[c][k]
 
@@ -179,7 +192,7 @@ def main():
     print(f'\n{"class":<12}{"GT":>7}{"TP":>7}{"FP":>7}{"FN":>7}'
           f'{"precision":>11}{"recall":>9}{"F1":>7}')
     rows = []
-    for c in SHARED:
+    for c in scored:
         tp, fp, fn = totals[c]['tp'], totals[c]['fp'], totals[c]['fn']
         gt_n = tp + fn
         prec = tp / (tp + fp) if tp + fp else float('nan')
