@@ -57,7 +57,9 @@ def rasterize_ref_cloud(ply_path, georef_path, mid, side, res=0.15,
     lo, hi = np.percentile(nz, [2, 98]) if nz.size else (0, 1)
     grey = np.clip((mean - lo) / max(hi - lo, 1e-9), 0, 1)
     img = np.full((n, n, 3), (16 / 255, 16 / 255, 24 / 255))
-    g_vals = 0.22 + 0.62 * grey[counts > 0]
+    # deliberately dim: the base map is context, the moving objects and
+    # overlays must stay the brightest things in frame
+    g_vals = 0.10 + 0.33 * grey[counts > 0]
     img[counts > 0] = np.stack([g_vals] * 3, axis=1)
     data_bounds = (pts[:, 0].min(), pts[:, 0].max(),
                    pts[:, 1].min(), pts[:, 1].max()) if len(pts) else None
@@ -197,12 +199,15 @@ def main():
         ax.set_aspect('equal')
         ax.set_xticks([]), ax.set_yticks([])
         ax.text(0.015, 0.975, f't = {t:6.1f} s', transform=ax.transAxes,
-                color='white', fontsize=13, va='top', family='monospace')
+                color='white', fontsize=13, va='top', family='monospace',
+                bbox=dict(facecolor='#101018', alpha=0.75, pad=4,
+                          edgecolor='none'))
         handles = [plt.Line2D([], [], color=mpl_color(c), lw=3, label=c)
                    for c in ('car', 'truck', 'bus', 'pedestrian', 'bicycle',
                              'motorcycle', 'scooter')]
         ax.legend(handles=handles, loc='lower right', fontsize=8,
-                  framealpha=0.25, labelcolor='white')
+                  framealpha=0.85, facecolor='#101018', edgecolor='none',
+                  labelcolor='white')
 
         fig.tight_layout(pad=0.4)
         fig.canvas.draw()
