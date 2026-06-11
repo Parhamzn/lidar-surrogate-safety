@@ -26,12 +26,20 @@ from lidar_pilot.io.opendrive import LaneMap
 from lidar_pilot.viz import load_orthophoto
 
 VRU = {'pedestrian', 'bicycle', 'motorcycle', 'scooter'}
-FACILITY_COLORS = {
-    'driving': '#c3cbd6', 'junction': '#8fa0b5', 'biking': '#7fdba0',
-    'sidewalk': '#f0b8b8', 'shoulder': '#d8d2c2', 'restricted': '#e6d9a8',
-    'parking': '#cfc4e8', 'median/other': '#e8e8e8',
-    'unmapped island': 'white', 'beyond map': 'white',
+# saturated, semantically distinct facility styles that survive being
+# drawn semi-transparent over an orthophoto; draw order puts the thin
+# strips (cycle paths, sidewalks) on top of the wide carriageways
+FACILITY_STYLE = {  # facility: (face color, alpha)
+    'driving': ('#3d76c2', 0.40),
+    'junction': ('#8a4fc8', 0.45),
+    'median/other': ('#9e9e9e', 0.40),
+    'shoulder': ('#8d7350', 0.50),
+    'restricted': ('#e3d51f', 0.55),
+    'parking': ('#34b8c4', 0.55),
+    'sidewalk': ('#ff9d1c', 0.60),
+    'biking': ('#11c24a', 0.70),
 }
+FACILITY_DRAW_ORDER = list(FACILITY_STYLE)
 
 
 def main(outputs_dir: str, xodr_path: str):
@@ -79,11 +87,14 @@ def main(outputs_dir: str, xodr_path: str):
         fac = ('junction' if ln.lane_type == 'driving' and ln.in_junction
                else ('median/other' if ln.lane_type == 'none' else ln.lane_type))
         by_type[fac].append(ln.polygon.vertices)
-    for fac, polys in by_type.items():
+    for z, fac in enumerate(FACILITY_DRAW_ORDER):
+        if fac not in by_type:
+            continue
+        face, alpha = FACILITY_STYLE[fac]
         ax.add_collection(PolyCollection(
-            polys, facecolors=FACILITY_COLORS.get(fac, '#dddddd'),
-            edgecolors='none', alpha=0.55 if ortho is not None else 0.9,
-            label=f'{fac} ({len(polys)})'))
+            by_type[fac], facecolors=face, alpha=alpha,
+            edgecolors=face, linewidths=0.8, zorder=2 + 0.1 * z,
+            label=f'{fac} ({len(by_type[fac])})'))
 
     vru_sev = sorted(vru_rows, key=lambda r: float(r['value']))[:40]
     x = [float(r['x']) for r in vru_sev]
@@ -99,7 +110,7 @@ def main(outputs_dir: str, xodr_path: str):
     ax.set_aspect('equal')
     ax.set_xlabel('x [m]'), ax.set_ylabel('y [m]')
     ax.set_title('Road facilities (OpenDRIVE) and severe VRU conflicts')
-    ax.legend(loc='upper left', fontsize=8)
+    ax.legend(loc='upper left', fontsize=9, framealpha=0.92)
     fig.tight_layout()
     Path('figures').mkdir(exist_ok=True)
     fig.savefig('figures/lane_facility_map_Measurement5.png', dpi=200)
