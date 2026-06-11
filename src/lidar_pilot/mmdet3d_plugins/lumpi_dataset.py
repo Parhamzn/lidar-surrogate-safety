@@ -25,11 +25,13 @@ class LumpiDataset(Det3DDataset):
         ann_info = super().parse_ann_info(info)
         if ann_info is None:
             ann_info = dict(
-                gt_bboxes_3d=np.zeros((0, 7), dtype=np.float32),
+                gt_bboxes_3d=np.zeros((0, 9), dtype=np.float32),
                 gt_labels_3d=np.zeros(0, dtype=np.int64),
             )
-        # default LiDARInstance3DBoxes origin (0.5, 0.5, 0): bottom-center z,
-        # matching how prepare_lumpi_training.py stores the boxes
+        # 9-DoF boxes [x, y, z, l, w, h, yaw, vx, vy]: the CenterPoint
+        # nuScenes head supervises its velocity output from dims 7:9.
+        # Default LiDARInstance3DBoxes origin (0.5, 0.5, 0) = bottom-center z,
+        # matching how prepare_lumpi_training.py stores the boxes.
         ann_info['gt_bboxes_3d'] = LiDARInstance3DBoxes(
-            ann_info['gt_bboxes_3d'], box_dim=7)
+            ann_info['gt_bboxes_3d'], box_dim=9)
         return ann_info

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-
+from lidar_pilot.kinematics import speed
 from lidar_pilot.metrics import hard_braking_events, min_pet, min_ttc
 
 MIN_TRACK_LEN = 5          # samples
@@ -35,6 +35,11 @@ MAX_PLAUSIBLE_DECEL = -12.0  # m/s^2: beyond emergency braking on dry
                              # glitches (teleporting boxes), not physics
 SEVERE_TTC = 3.0           # s, report TTC conflicts below this
 SEVERE_PET = 3.0           # s, report PET events below this
+# Sustained speed (90th percentile, m/s) beyond which a class label is
+# physically implausible and the track's class cannot be trusted (e.g. a
+# "pedestrian" at vehicle speed is a mislabeled vehicle).
+MAX_CLASS_SPEED = {'pedestrian': 4.0, 'bicycle': 12.0, 'scooter': 14.0,
+                   'motorcycle': 42.0}
 PET_MAX_GAP = 10.0         # s: users this far apart in time cannot interact
 PET_MINING_DT = 0.5        # s: PET polyline crossing runs on coarse copies
                            # (long 10 Hz roadside tracks make the segment-
@@ -47,6 +52,38 @@ def is_moving_road_user(tr) -> bool:
         return False
     path_len = float(np.linalg.norm(np.diff(tr.xy, axis=0), axis=1).sum())
     return disp / max(path_len, 1e-9) >= MIN_PATH_EFFICIENCY
+
+
+def class_speed_plausible(tr) -> bool:
+    limit = MAX_CLASS_SPEED.get(tr.label)
+    if limit is None or len(tr) < 5:
+        return True
+    return float(np.percentile(speed(tr, smooth_window=5), 90)) <= limit
+
+
+def same_object_pair(a, b) -> bool:
+    """Two tracks that are really one physical object.
+
+    Catches the signature of label/tracking artifacts that fake extreme
+    conflicts: (1) shadow duplicates, where two ids trace near-identical
+    paths simultaneously (e.g. one object labeled both pedestrian and car);
+    (2) fragmentation, where one id ends and another starts at the same
+    place and time. Real conflict pairs do neither: two road users cannot
+    occupy the same footprint for their entire encounter.
+    """
+    w = a.overlap_window(b)
+    if w is not None and w[1] - w[0] >= 1.0:
+        grid = np.arange(w[0], w[1], 0.2)
+        if grid.size >= 3:
+            d = np.linalg.norm(a.resample(grid).xy - b.resample(grid).xy, axis=1)
+            if float(np.median(d)) < 2.5:
+                return True
+    for first, second in ((a, b), (b, a)):
+        gap = second.t[0] - first.t[-1]
+        if -1.0 <= gap <= 2.0 and \
+                float(np.linalg.norm(first.xy[-1] - second.xy[0])) < 3.0:
+            return True
+    return False
 
 
 def bboxes_overlap(a, b, margin=3.0) -> bool:
@@ -82,13 +119,22 @@ def main(outputs_dir: str):
         all_trajs = [tr for tr in pickle.load(open(pkl, 'rb')) if len(tr) >= MIN_TRACK_LEN]
         # Surrogate conflicts are interactions between moving road users;
         # parked vehicles and bike racks are scenery, not conflict parties.
-        trajs = [tr for tr in all_trajs if is_moving_road_user(tr)]
+        # Tracks whose class is kinematically implausible are unreliable
+        # labels and are excluded entirely.
+        trajs = [tr for tr in all_trajs
+                 if is_moving_road_user(tr) and class_speed_plausible(tr)]
+        n_implausible = sum(1 for tr in all_trajs
+                            if is_moving_road_user(tr)
+                            and not class_speed_plausible(tr))
 
         coarse = {tr.track_id: coarse_copy(tr) for tr in trajs}
 
-        n_pairs = n_ttc = n_pet = 0
+        n_pairs = n_ttc = n_pet = n_same = 0
         for a, b in combinations(trajs, 2):
             if not bboxes_overlap(a, b) or not temporally_interacting(a, b):
+                continue
+            if same_object_pair(a, b):
+                n_same += 1
                 continue
             n_pairs += 1
             if a.overlap_window(b) is not None:
@@ -121,9 +167,11 @@ def main(outputs_dir: str):
                 rows.append([scene, 'HBE', f'{ev.peak_decel:.2f}', f'{ev.t_start:.1f}',
                              tr.track_id, tr.label, '', '',
                              f'{x:.2f}', f'{y:.2f}'])
-        print(f'{scene}: {len(trajs)}/{len(all_trajs)} moving tracks, '
-              f'{n_pairs} interacting pairs -> {n_ttc} TTC<{SEVERE_TTC}s, '
-              f'{n_pet} PET<{SEVERE_PET}s, {n_hbe} hard-braking')
+        print(f'{scene}: {len(trajs)}/{len(all_trajs)} moving tracks '
+              f'({n_implausible} class-implausible excluded), '
+              f'{n_pairs} pairs ({n_same} same-object skipped) -> '
+              f'{n_ttc} TTC<{SEVERE_TTC}s, {n_pet} PET<{SEVERE_PET}s, '
+              f'{n_hbe} hard-braking')
 
     with open(out_dir / 'conflicts.csv', 'w', newline='') as f:
         w = csv.writer(f)

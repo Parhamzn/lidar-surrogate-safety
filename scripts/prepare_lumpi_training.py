@@ -41,13 +41,31 @@ def estimate_z_shift(ply_path):
 
 
 def load_labels_by_frame(csv_path, max_range):
+    """Group label rows by frame and append per-object GT velocity.
+
+    The CenterPoint nuScenes head trains a velocity output from box[7:9],
+    so each row gains (vx, vy) computed by differentiating the object's
+    positions over time. Returns rows as (raw 16 cols, vx, vy)."""
     cols = np.loadtxt(csv_path, delimiter=',', skiprows=1,
                       usecols=range(16), ndmin=2)
+    vel = np.zeros((len(cols), 2))
+    by_id = defaultdict(list)
+    for i, r in enumerate(cols):
+        by_id[int(r[1])].append(i)
+    for rows in by_id.values():
+        rows = np.asarray(rows)[np.argsort(cols[rows, 0], kind='stable')]
+        t, xy = cols[rows, 0], cols[rows, 9:11]
+        keep = np.concatenate([[True], np.diff(t) > 1e-9])
+        rows, t, xy = rows[keep], t[keep], xy[keep]
+        if len(rows) >= 2:
+            vel[rows, 0] = np.gradient(xy[:, 0], t)
+            vel[rows, 1] = np.gradient(xy[:, 1], t)
+
     frames = defaultdict(list)
-    for r in cols:
+    for r, v in zip(cols, vel):
         if np.hypot(r[9], r[10]) > max_range:
             continue
-        frames[int(round(r[0] * FPS))].append(r)
+        frames[int(round(r[0] * FPS))].append((r, v))
     return frames
 
 
@@ -74,14 +92,15 @@ def build_split(frame_ids, lidar_dir, bins_dir, labels, z_shift):
         if not bin_path.exists():
             convert(ply, bin_path, z_shift)
         instances = []
-        for r in labels[fidx]:
+        for r, v in labels[fidx]:
             name = LUMPI_ID_TO_NAME.get(int(r[7]))
             if name is None:
                 continue
             x, y, zc, l, w, h, yaw = r[9], r[10], r[11], r[12], r[13], r[14], r[15]
             instances.append(dict(
                 bbox_3d=[float(x), float(y), float(zc - h / 2 + z_shift),
-                         float(l), float(w), float(h), float(yaw)],
+                         float(l), float(w), float(h), float(yaw),
+                         float(v[0]), float(v[1])],
                 bbox_label_3d=CLASSES.index(name),
             ))
         data_list.append(dict(
