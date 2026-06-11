@@ -53,20 +53,12 @@ def main():
                              layout='constrained')
     lim = R_MAX + 3
     headline = []
-    cbars = []
 
     for col, metric in enumerate(('TTC', 'PET', 'HBE')):
         evs = {}
         for tag, rows in (('gt', gt), ('e2e', e2e)):
             evs[tag] = np.array([(float(r['x']), float(r['y'])) for r in rows
                                  if r['metric'] == metric]).reshape(-1, 2)
-
-        # shared color scale: first pass computes both maximima
-        vmax = 1
-        for tag in ('gt', 'e2e'):
-            h, _, _ = np.histogram2d(evs[tag][:, 0], evs[tag][:, 1],
-                                     bins=24, range=[[-lim, lim], [-lim, lim]])
-            vmax = max(vmax, h.max())
 
         for row, tag, label in ((0, 'gt', 'human-labeled ground truth'),
                                 (1, 'e2e', 'label-free pipeline')):
@@ -75,19 +67,15 @@ def main():
                 ax.imshow(ortho, extent=ortho_ext, alpha=0.85, zorder=0)
             hb = ax.hexbin(evs[tag][:, 0], evs[tag][:, 1], gridsize=22,
                            cmap=alpha_cmap(CMAPS[metric]), mincnt=1,
-                           vmin=0, vmax=vmax, zorder=2,
-                           extent=(-lim, lim, -lim, lim))
+                           zorder=2, extent=(-lim, lim, -lim, lim))
             ax.set_xlim(-lim, lim), ax.set_ylim(-lim, lim)
             ax.set_aspect('equal')
             ax.set_xticks([]), ax.set_yticks([])
             ax.set_title(f'{metric} — {label} (n={len(evs[tag])})',
                          fontsize=11,
                          color=ACCENT[metric] if row == 0 else 'black')
-        # one colorbar per metric column, spanning both map rows, so all
-        # columns get identical axes sizes
-        cb = fig.colorbar(hb, ax=[axes[0, col], axes[1, col]], shrink=0.72,
-                          pad=0.015, label='events per cell (shared scale)')
-        cbars.append(cb)
+            fig.colorbar(hb, ax=ax, shrink=0.9, pad=0.015,
+                         label='events per cell')
 
         # per-cell agreement
         bins = np.arange(-lim, lim + CELL, CELL)
@@ -124,25 +112,6 @@ def main():
                  f'Measurement5, within {R_MAX:.0f} m sensing envelope — '
                  + '   ·   '.join(headline),
                  fontsize=13)
-
-    # explicit binding: frame each column's map pair together with its
-    # shared colorbar (positions are valid only after constrained layout
-    # has solved, hence the draw first)
-    from matplotlib.patches import FancyBboxPatch
-    fig.canvas.draw()
-    for col, metric in enumerate(('TTC', 'PET', 'HBE')):
-        boxes = [axes[0, col].get_position(), axes[1, col].get_position(),
-                 cbars[col].ax.get_position()]
-        x0 = min(b.x0 for b in boxes) - 0.006
-        x1 = max(b.x1 for b in boxes) + 0.017
-        y0 = min(b.y0 for b in boxes) - 0.008
-        y1 = max(b.y1 for b in boxes) + 0.022
-        fig.add_artist(FancyBboxPatch(
-            (x0, y0), x1 - x0, y1 - y0,
-            boxstyle='round,pad=0.003,rounding_size=0.008',
-            transform=fig.transFigure, facecolor='none',
-            edgecolor=ACCENT[metric], linewidth=1.6, alpha=0.8))
-
     out = 'figures/closing_the_loop_Measurement5.png'
     fig.savefig(out, dpi=200)
     print(f'wrote {out}')
