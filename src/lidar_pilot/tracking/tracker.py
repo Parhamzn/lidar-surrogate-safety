@@ -28,6 +28,9 @@ class Track:
     confirmed: bool = False
     # History rows: [t, x, y, z, yaw, l, w, h, vx, vy, vz]
     history: list = field(default_factory=list)
+    # Velocity of the most recently matched detection (velocity head),
+    # kept alongside the KF estimate so the two can be compared.
+    last_det_velocity: np.ndarray | None = None
 
     def record(self, t: float) -> None:
         self.history.append([t, *self.kf.box, *self.kf.velocity])
@@ -69,17 +72,22 @@ class Tracker3D:
              boxes: np.ndarray,
              scores: np.ndarray,
              labels: list[str],
-             t: float) -> list[Track]:
+             t: float,
+             velocities: np.ndarray | None = None) -> list[Track]:
         """Advance one frame.
 
         boxes: (N, 7) [x, y, z, yaw, l, w, h]; scores: (N,); labels: N class
-        names; t: frame timestamp in seconds. Returns currently confirmed
-        tracks (after this frame's update).
+        names; t: frame timestamp in seconds; velocities: optional (N, 2)
+        per-detection velocity (e.g. CenterPoint's velocity head), used to
+        seed new tracks. Returns currently confirmed tracks (after this
+        frame's update).
         """
         boxes = np.asarray(boxes, dtype=float).reshape(-1, 7)
         scores = np.asarray(scores, dtype=float).reshape(-1)
         keep = scores >= self.min_score
         boxes, labels = boxes[keep], [l for l, k in zip(labels, keep) if k]
+        if velocities is not None:
+            velocities = np.asarray(velocities, dtype=float).reshape(-1, 2)[keep]
 
         dt = 0.0 if self._last_t is None else t - self._last_t
         self._last_t = t
@@ -95,13 +103,18 @@ class Tracker3D:
             tr.misses = 0
             if tr.hits >= self.min_hits:
                 tr.confirmed = True
+            if velocities is not None:
+                tr.last_det_velocity = velocities[di].copy()
             tr.record(t)
 
         for ti in unmatched_tracks:
             self._active[ti].misses += 1
 
         for di in unmatched_dets:
-            tr = Track(self._next_id, labels[di], KalmanBox3D(boxes[di]))
+            init_v = velocities[di] if velocities is not None else None
+            tr = Track(self._next_id, labels[di], KalmanBox3D(boxes[di], init_velocity=init_v))
+            if velocities is not None:
+                tr.last_det_velocity = velocities[di].copy()
             self._next_id += 1
             if self.min_hits <= 1:
                 tr.confirmed = True

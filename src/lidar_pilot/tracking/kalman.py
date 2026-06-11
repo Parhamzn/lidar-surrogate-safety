@@ -23,12 +23,17 @@ def wrap_angle(a: float) -> float:
 
 class KalmanBox3D:
     def __init__(self, box: np.ndarray,
+                 init_velocity: np.ndarray | None = None,
                  pos_var: float = 1.0,
                  vel_var: float = 10.0,
                  accel_std: float = 3.0,
                  meas_std: float = 0.5):
         """box: (7,) [x, y, z, yaw, l, w, h] first detection of the object.
 
+        init_velocity: optional (2,) or (3,) m/s seed, e.g. from a
+        detector's velocity head. Without it a new track starts at zero
+        velocity, which at low frame rates (nuScenes keyframes are 2 Hz)
+        makes the first re-association fail for fast objects.
         accel_std (m/s^2) drives process noise: how much velocity may change
         between frames. meas_std (m) is detector localization noise.
         """
@@ -37,6 +42,11 @@ class KalmanBox3D:
         # Covariance: confident in observed pose, uninformed about velocity.
         self.P = np.eye(_DIM_X) * pos_var
         self.P[7:, 7:] = np.eye(3) * vel_var
+        if init_velocity is not None:
+            v = np.asarray(init_velocity, dtype=float).ravel()
+            self.x[7:7 + v.size] = v
+            # Seeded velocity is far better than uninformed: shrink its var.
+            self.P[7:, 7:] = np.eye(3) * 2.0
         self._accel_std = accel_std
         self.R = np.eye(_DIM_Z) * meas_std**2
         self.H = np.zeros((_DIM_Z, _DIM_X))

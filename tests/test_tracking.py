@@ -82,6 +82,28 @@ def test_no_cross_class_match():
     assert labels == {"car", "pedestrian"}
 
 
+def test_velocity_seeding_enables_low_framerate_tracking():
+    """At 2 Hz a 14 m/s car moves 7 m between frames, far beyond a 3 m
+    gate. Seeding new tracks with the detector's velocity head must keep
+    the track alive; without seeding it fragments."""
+    def run(seed: bool):
+        tracker = Tracker3D(max_match_distance=3.0, min_hits=2)
+        ids = set()
+        for k in range(10):
+            t = k * 0.5
+            box = make_box(14.0 * t, 0.0)
+            vel = np.array([[14.0, 0.0]]) if seed else None
+            active = tracker.step(box[None], np.array([0.9]), ["car"], t,
+                                  velocities=vel)
+            ids.update(tr.track_id for tr in active)
+        return ids
+
+    assert len(run(seed=True)) == 1
+    # Unseeded, no association ever succeeds: tracks die at 1 hit and never
+    # confirm, so not a single stable track comes out.
+    assert len(run(seed=False)) == 0
+
+
 def test_trajectory_export():
     tracker = Tracker3D(min_hits=2)
     for k in range(10):
