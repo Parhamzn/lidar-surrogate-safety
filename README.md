@@ -29,8 +29,8 @@ point clouds ──► CenterPoint (MMDetection3D, pretrained nuScenes)
   each module's docstring states the exact formulation used
 - `tests/` — closed-form synthetic scenarios (head-on TTC, orthogonal PET
   crossings, braking profiles, ID-stability under occlusion)
-- `PILOT_PLAN.md` — full project plan, dataset survey, and the verified
-  RTX 5090 (Blackwell) toolchain recipe
+- `scripts/` — the nuScenes pipeline runner (GPU), conflict mining, and
+  figure generation
 
 ## Setup (local, metrics development)
 
@@ -40,9 +40,14 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-Detection runs remotely (RTX 5090) on the env described in
-`PILOT_PLAN.md` §6: torch 2.7.1+cu128, source-built mmcv 2.1.0,
-mmdetection3d v1.4.0.
+Detection runs on a CUDA box. On Blackwell GPUs (RTX 50-series, sm_120)
+prebuilt wheels do not exist for the detection stack; the working recipe is:
+torch 2.7.1 from the cu128 index, mmcv 2.1.0 built from source with
+`MMCV_WITH_OPS=1 FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="12.0"`, then
+mmdet 3.3.0 and mmdetection3d v1.4.0 installed with
+`--no-build-isolation`. Pretrained CenterPoint-pillar nuScenes weights
+come from the MMDetection3D model zoo (checkpoint URLs are in
+`configs/centerpoint/metafile.yml`).
 
 ## Data
 
