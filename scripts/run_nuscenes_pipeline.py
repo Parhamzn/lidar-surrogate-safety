@@ -117,7 +117,12 @@ class RerunLogger:
         self.trails: dict[int, list] = {}
 
     def close(self) -> None:
-        self.rec.flush(blocking=True)
+        # 0.18 RecordingStream has no flush(); the file is flushed when the
+        # stream drops at process exit, which is why each scene must run in
+        # its own process (in-process re-init deadlocks the SDK batcher).
+        flush = getattr(self.rec, 'flush', None)
+        if callable(flush):
+            flush(blocking=True)
 
     def set_time(self, t: float) -> None:
         self.rr.set_time_seconds('t', t, recording=self.rec)
