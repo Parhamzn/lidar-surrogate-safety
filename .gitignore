@@ -10,3 +10,4 @@ outputs/
 *.rrd
 *.tgz
 .DS_Store
+*.mov
