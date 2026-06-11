@@ -36,8 +36,11 @@ def main():
                 return 0.0 if np.isnan(v) else v
         return 0.0
 
+    n_gt = {c: max(int(r['gt']) for r in rows if r['class'] == c) for c in classes}
+    tick_labels = [f'{c}\nn={n_gt[c]}' for c in classes]
+
     x = np.arange(len(classes))
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.6), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), sharey=True)
     for ax, field in ((axes[0], 'f1'), (axes[1], 'recall')):
         ax.bar(x - 0.18, [get(args.baseline, c, field) for c in classes],
                width=0.36, label='pretrained (nuScenes, ego-vehicle)',
@@ -45,18 +48,15 @@ def main():
         ax.bar(x + 0.18, [get(args.finetuned, c, field) for c in classes],
                width=0.36, label='fine-tuned on roadside data',
                color='#2c7fb8')
-        ax.set_xticks(x, classes, rotation=20)
+        ax.set_xticks(x, tick_labels, fontsize=9)
         ax.set_title(field.upper())
         ax.set_ylim(0, 1)
         ax.grid(alpha=0.25, axis='y')
     axes[0].set_ylabel('score (center-distance matching, 2 m)')
     axes[0].legend(fontsize=9)
-    n_gt = {c: max(int(r['gt']) for r in rows if r['class'] == c) for c in classes}
-    fig.suptitle('Ego-vehicle → roadside domain shift: detection before/after '
-                 f'fine-tuning (held-out slice, GT n: '
-                 + ', '.join(f'{c} {n_gt[c]}' for c in classes) + ')',
-                 fontsize=10)
-    fig.tight_layout()
+    fig.suptitle('Ego-vehicle → roadside domain shift: '
+                 'detection before/after fine-tuning (held-out slice)')
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     out = 'figures/detection_domain_shift.png'
     fig.savefig(out, dpi=200)
     print(f'wrote {out}')
