@@ -23,6 +23,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from lidar_pilot.io.opendrive import LaneMap
+from lidar_pilot.viz import load_orthophoto
 
 VRU = {'pedestrian', 'bicycle', 'motorcycle', 'scooter'}
 FACILITY_COLORS = {
@@ -70,6 +71,9 @@ def main(outputs_dir: str, xodr_path: str):
 
     # ---- facility map + severe VRU conflicts ----
     fig, ax = plt.subplots(figsize=(10.5, 9))
+    ortho, ortho_ext = load_orthophoto()
+    if ortho is not None:
+        ax.imshow(ortho, extent=ortho_ext, zorder=0)
     by_type = defaultdict(list)
     for ln in lane_map.lanes:
         fac = ('junction' if ln.lane_type == 'driving' and ln.in_junction
@@ -78,7 +82,8 @@ def main(outputs_dir: str, xodr_path: str):
     for fac, polys in by_type.items():
         ax.add_collection(PolyCollection(
             polys, facecolors=FACILITY_COLORS.get(fac, '#dddddd'),
-            edgecolors='none', alpha=0.9, label=f'{fac} ({len(polys)})'))
+            edgecolors='none', alpha=0.55 if ortho is not None else 0.9,
+            label=f'{fac} ({len(polys)})'))
 
     vru_sev = sorted(vru_rows, key=lambda r: float(r['value']))[:40]
     x = [float(r['x']) for r in vru_sev]

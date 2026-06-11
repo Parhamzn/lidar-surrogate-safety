@@ -17,6 +17,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from lidar_pilot.viz import load_orthophoto
+
 VRU = {'pedestrian', 'bicycle', 'motorcycle', 'scooter'}
 
 
@@ -66,6 +68,14 @@ def main(outputs_dir: str, map_csv: str | None = None):
         N_EXTREME = 25      # circle only the N most severe events per panel
         CMAPS = {'TTC': 'Reds', 'PET': 'Purples', 'HBE': 'Blues'}
 
+        def alpha_cmap(name):
+            """Sequential cmap with an alpha ramp: sparse cells stay
+            see-through over the orthophoto, dense cells read solid."""
+            from matplotlib.colors import ListedColormap
+            colors = plt.get_cmap(name)(np.linspace(0, 1, 256))
+            colors[:, 3] = np.linspace(0.25, 0.95, 256)
+            return ListedColormap(colors)
+
         from matplotlib.collections import LineCollection
         traj_lines = [tr.xy for tr in trajs if len(tr) >= 5]
         all_pts = np.vstack(traj_lines)
@@ -74,13 +84,17 @@ def main(outputs_dir: str, map_csv: str | None = None):
 
         fig, axes_map = plt.subplots(1, 3, figsize=(16.5, 6.2),
                                      sharex=True, sharey=True)
+        ortho, ortho_ext = load_orthophoto()
         for ax, metric in zip(axes_map, ('TTC', 'PET', 'HBE')):
-            ax.add_collection(LineCollection(traj_lines, colors='0.85',
-                                             linewidths=0.4, alpha=0.5,
-                                             zorder=1))
+            if ortho is not None:
+                ax.imshow(ortho, extent=ortho_ext, alpha=0.75, zorder=0.5)
+            else:
+                ax.add_collection(LineCollection(traj_lines, colors='0.85',
+                                                 linewidths=0.4, alpha=0.5,
+                                                 zorder=1))
             if road:
-                ax.add_collection(LineCollection(road, colors='0.45',
-                                                 linewidths=0.9, alpha=0.9,
+                ax.add_collection(LineCollection(road, colors='0.3',
+                                                 linewidths=0.7, alpha=0.7,
                                                  zorder=1.5))
             ev = [r for r in scene_rows if r['metric'] == metric and r['x']
                   and (metric == 'HBE' or float(r['value']) <= SERIOUS)]
@@ -88,7 +102,9 @@ def main(outputs_dir: str, map_csv: str | None = None):
                 x = np.array([float(r['x']) for r in ev])
                 y = np.array([float(r['y']) for r in ev])
                 v = np.array([float(r['value']) for r in ev])
-                hb = ax.hexbin(x, y, gridsize=34, cmap=CMAPS[metric],
+                hb = ax.hexbin(x, y, gridsize=34,
+                               cmap=(alpha_cmap(CMAPS[metric])
+                                     if ortho is not None else CMAPS[metric]),
                                mincnt=1, zorder=2,
                                extent=(*x_lim, *y_lim))
                 plt.colorbar(hb, ax=ax, shrink=0.8, pad=0.015,
@@ -106,9 +122,9 @@ def main(outputs_dir: str, map_csv: str | None = None):
             ax.set_aspect('equal')
             ax.set_xlabel('x [m]')
         axes_map[0].set_ylabel('y [m]')
-        fig.suptitle(f'{name}: conflict hotspots '
-                     f'(light grey = trajectories'
-                     f'{", dark grey = road network" if road else ""})',
+        fig.suptitle(f'{name}: conflict hotspots'
+                     f'{" (orthophoto: LGLN DOP20, CC-BY)" if ortho is not None else ""}'
+                     f'{", dark grey = road network" if road else ""}',
                      y=0.98)
         fig.tight_layout()
         fig.savefig(fig_dir / f'conflict_map_{name}.png', dpi=200)
