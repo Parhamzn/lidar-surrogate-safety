@@ -115,6 +115,7 @@ class RerunLogger:
         self.rec = rr.new_recording('lidar_pilot')
         rr.save(str(path), recording=self.rec)
         self.trails: dict[int, list] = {}
+        self.trail_colors: dict[int, tuple] = {}
 
     def close(self) -> None:
         # 0.18 RecordingStream has no flush(); the file is flushed when the
@@ -142,15 +143,18 @@ class RerunLogger:
             labels.append(f'#{tr.track_id} {tr.label} '
                           f'{np.linalg.norm(tr.kf.velocity[:2]) * 3.6:.0f} km/h')
             self.trails.setdefault(tr.track_id, []).append([x, y, z + h / 2])
+            self.trail_colors[tr.track_id] = CLASS_COLORS.get(tr.label, (200, 200, 200))
         if centers:
             rr.log('world/tracks', rr.Boxes3D(centers=centers, half_sizes=half_sizes,
                                               rotations=quats, colors=colors,
                                               labels=labels),
                    recording=self.rec)
-        strips = [np.asarray(v) for v in self.trails.values() if len(v) >= 2]
-        if strips:
-            rr.log('world/trails', rr.LineStrips3D(strips, radii=0.06,
-                                                   colors=(255, 230, 60)),
+        strip_ids = [tid for tid, v in self.trails.items() if len(v) >= 2]
+        if strip_ids:
+            rr.log('world/trails',
+                   rr.LineStrips3D([np.asarray(self.trails[i]) for i in strip_ids],
+                                   radii=0.06,
+                                   colors=[self.trail_colors[i] for i in strip_ids]),
                    recording=self.rec)
 
 

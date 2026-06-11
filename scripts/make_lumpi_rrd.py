@@ -67,6 +67,7 @@ def main():
     frames = load_rows(args.label_csv, args.start, args.end)
     lidar_dir = Path(args.lidar_dir) if args.lidar_dir else None
     trails: dict[int, list] = {}
+    trail_colors: dict[int, tuple] = {}
 
     for fidx in sorted(frames):
         t = fidx / FPS
@@ -92,15 +93,18 @@ def main():
             colors.append(CLASS_COLORS.get(cls, (200, 200, 200)))
             labels.append(f'#{oid} {cls}')
             trails.setdefault(oid, []).append([x, y, z])
+            trail_colors[oid] = CLASS_COLORS.get(cls, (200, 200, 200))
         if centers:
             rr.log('world/objects',
                    rr.Boxes3D(centers=centers, half_sizes=half_sizes,
                               rotations=quats, colors=colors, labels=labels),
                    recording=rec)
-        strips = [np.asarray(v) for v in trails.values() if len(v) >= 2]
-        if strips:
+        strip_ids = [oid for oid, v in trails.items() if len(v) >= 2]
+        if strip_ids:
             rr.log('world/trails',
-                   rr.LineStrips3D(strips, radii=0.05, colors=(255, 230, 60)),
+                   rr.LineStrips3D([np.asarray(trails[i]) for i in strip_ids],
+                                   radii=0.05,
+                                   colors=[trail_colors[i] for i in strip_ids]),
                    recording=rec)
     print(f'wrote {args.out} ({len(frames)} frames, window {args.start}-{args.end}s)')
 
