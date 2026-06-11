@@ -88,9 +88,12 @@ def main(outputs_dir: str, xodr_path: str):
     vru_sev = sorted(vru_rows, key=lambda r: float(r['value']))[:40]
     x = [float(r['x']) for r in vru_sev]
     y = [float(r['y']) for r in vru_sev]
-    ax.scatter(x, y, s=46, marker='o', facecolor='crimson',
-               edgecolors='black', linewidths=0.6, zorder=5,
-               label='40 most severe VRU conflicts')
+    # crosses keep the spot itself visible on the orthophoto; the white
+    # pass underneath is a halo for contrast on busy imagery
+    ax.scatter(x, y, s=110, marker='x', color='white', linewidths=4.0,
+               zorder=5)
+    ax.scatter(x, y, s=90, marker='x', color='crimson', linewidths=1.8,
+               zorder=6, label='40 most severe VRU conflicts')
 
     ax.autoscale_view()
     ax.set_aspect('equal')
