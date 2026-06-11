@@ -49,7 +49,8 @@ def main():
     ortho, ortho_ext = load_orthophoto()
 
     fig, axes = plt.subplots(3, 3, figsize=(15, 14.5),
-                             gridspec_kw=dict(height_ratios=[1, 1, 0.78]))
+                             gridspec_kw=dict(height_ratios=[1, 1, 0.78]),
+                             layout='constrained')
     lim = R_MAX + 3
     headline = []
 
@@ -81,9 +82,10 @@ def main():
             ax.set_title(f'{metric} — {label} (n={len(evs[tag])})',
                          fontsize=11,
                          color=ACCENT[metric] if row == 0 else 'black')
-            if col == 2:
-                plt.colorbar(hb, ax=ax, shrink=0.85, pad=0.02,
-                             label='events per cell')
+        # one colorbar per metric column, spanning both map rows, so all
+        # columns get identical axes sizes
+        fig.colorbar(hb, ax=[axes[0, col], axes[1, col]], shrink=0.72,
+                     pad=0.015, label='events per cell')
 
         # per-cell agreement
         bins = np.arange(-lim, lim + CELL, CELL)
@@ -119,8 +121,7 @@ def main():
                  'human-labeled ground truth\n'
                  f'Measurement5, within {R_MAX:.0f} m sensing envelope — '
                  + '   ·   '.join(headline),
-                 fontsize=13, y=0.995)
-    fig.tight_layout(rect=(0, 0, 1, 0.965))
+                 fontsize=13)
     out = 'figures/closing_the_loop_Measurement5.png'
     fig.savefig(out, dpi=200)
     print(f'wrote {out}')
