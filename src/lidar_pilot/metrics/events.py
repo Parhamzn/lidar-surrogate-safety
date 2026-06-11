@@ -40,6 +40,10 @@ def hard_braking_events(traj: Trajectory,
     a = longitudinal_accel(traj, smooth_window)
     s = speed(traj, smooth_window)
     below = a <= threshold
+    # The first and last samples use one-sided differences and reflect
+    # track birth/death transients, not vehicle dynamics: never start or
+    # end an event on them.
+    below[0] = below[-1] = False
 
     events: list[BrakingEvent] = []
     start = None

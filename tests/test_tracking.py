@@ -104,6 +104,16 @@ def test_velocity_seeding_enables_low_framerate_tracking():
     assert len(run(seed=False)) == 0
 
 
+def test_per_class_gates():
+    """With a dict gate, a 3 m jump matches a car but not a pedestrian."""
+    gates = {"car": 4.0, "pedestrian": 2.0}
+    for label, expect_ids in (("car", 1), ("pedestrian", 2)):
+        tracker = Tracker3D(max_match_distance=gates, min_hits=1)
+        tracker.step(make_box(0, 0)[None], np.array([0.9]), [label], 0.0)
+        tracker.step(make_box(3.0, 0)[None], np.array([0.9]), [label], 0.5)
+        assert len({tr.track_id for tr in tracker._active}) == expect_ids, label
+
+
 def test_trajectory_export():
     tracker = Tracker3D(min_hits=2)
     for k in range(10):

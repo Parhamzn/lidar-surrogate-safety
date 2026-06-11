@@ -50,11 +50,15 @@ class Track:
 
 class Tracker3D:
     def __init__(self,
-                 max_match_distance: float = 2.5,
+                 max_match_distance: float | dict[str, float] = 2.5,
                  max_age: int = 3,
                  min_hits: int = 2,
                  min_score: float = 0.3):
-        """max_match_distance: BEV gating radius in metres.
+        """max_match_distance: BEV gating radius in metres, either one
+        scalar or a per-class dict (key 'default' for unlisted classes).
+        Class-dependent gates matter at low frame rates: a gate wide enough
+        for a car moving between frames lets pedestrian/bicycle tracks jump
+        between distinct nearby objects (e.g. along a bike rack).
         max_age: consecutive missed frames before a track is terminated.
         min_hits: matches needed before a track counts as confirmed.
         min_score: detections below this confidence are ignored.
@@ -140,20 +144,28 @@ class Tracker3D:
         cost = np.full((n_t, n_d), 1e6)
         for i, tr in enumerate(self._active):
             pred_xy = tr.kf.box[:2]
+            gate = self._gate(tr.label)
             for j in range(n_d):
                 if labels[j] != tr.label:
                     continue  # never match across classes
                 d = float(np.linalg.norm(pred_xy - boxes[j, :2]))
-                if d <= self.max_match_distance:
+                if d <= gate:
                     cost[i, j] = d
 
         rows, cols = linear_sum_assignment(cost)
+        # (matches with cost 1e6 are non-matches produced by the solver)
         matches = [(i, j) for i, j in zip(rows, cols) if cost[i, j] < 1e6]
         matched_t = {i for i, _ in matches}
         matched_d = {j for _, j in matches}
         return (matches,
                 [j for j in range(n_d) if j not in matched_d],
                 [i for i in range(n_t) if i not in matched_t])
+
+    def _gate(self, label: str) -> float:
+        if isinstance(self.max_match_distance, dict):
+            return self.max_match_distance.get(
+                label, self.max_match_distance.get('default', 2.5))
+        return self.max_match_distance
 
     @property
     def trajectories(self) -> list[Trajectory]:

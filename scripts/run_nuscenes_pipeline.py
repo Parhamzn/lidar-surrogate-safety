@@ -138,10 +138,18 @@ class RerunLogger:
                                                    colors=(255, 230, 60)))
 
 
+# Per-class association gates (metres) for 2 Hz keyframes: roughly the
+# distance the class can plausibly travel in 0.5 s plus localization slack.
+# Tight VRU gates stop tracks hopping between distinct parked bikes/people.
+MATCH_GATES = {'car': 4.0, 'truck': 4.5, 'bus': 5.5, 'trailer': 5.5,
+               'construction_vehicle': 4.0, 'pedestrian': 2.0,
+               'bicycle': 2.5, 'motorcycle': 3.0, 'default': 4.0}
+
+
 def run_scene(nusc, inferencer, scene, out_dir: Path, rrd: bool,
               score_thr: float, csv_writer, split_name: str):
     sample = nusc.get('sample', scene['first_sample_token'])
-    tracker = Tracker3D(max_match_distance=4.0, max_age=2, min_hits=2,
+    tracker = Tracker3D(max_match_distance=MATCH_GATES, max_age=2, min_hits=2,
                         min_score=score_thr)
     logger = RerunLogger(out_dir / f"{scene['name']}.rrd") if rrd else None
     t0 = sample['timestamp'] / 1e6
