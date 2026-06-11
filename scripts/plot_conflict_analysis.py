@@ -29,8 +29,21 @@ def pair_type(ca: str, cb: str) -> str:
     return 'vehicle-vehicle'
 
 
-def main(outputs_dir: str):
+def load_road_polylines(csv_path):
+    """LUMPI Map/lumpi_polylines.csv: one polyline per row as alternating
+    x,y values, already in the label coordinate frame."""
+    lines = []
+    for line in open(csv_path):
+        vals = np.fromstring(line, sep=',')
+        if vals.size >= 4:
+            lines.append(vals.reshape(-1, 2))
+    return lines
+
+
+def main(outputs_dir: str, map_csv: str | None = None):
     out_dir = Path(outputs_dir)
+    road = (load_road_polylines(map_csv)
+            if map_csv and Path(map_csv).exists() else [])
     rows = list(csv.DictReader(open(out_dir / 'conflicts.csv')))
     # Pedestrian-pedestrian proximity is crowd dynamics, not a traffic
     # conflict: the conflict literature requires at least one vehicle or
@@ -65,6 +78,10 @@ def main(outputs_dir: str):
             ax.add_collection(LineCollection(traj_lines, colors='0.85',
                                              linewidths=0.4, alpha=0.5,
                                              zorder=1))
+            if road:
+                ax.add_collection(LineCollection(road, colors='0.45',
+                                                 linewidths=0.9, alpha=0.9,
+                                                 zorder=1.5))
             ev = [r for r in scene_rows if r['metric'] == metric and r['x']
                   and (metric == 'HBE' or float(r['value']) <= SERIOUS)]
             if ev:
@@ -89,7 +106,9 @@ def main(outputs_dir: str):
             ax.set_aspect('equal')
             ax.set_xlabel('x [m]')
         axes_map[0].set_ylabel('y [m]')
-        fig.suptitle(f'{name}: conflict hotspots (grey = all trajectories)',
+        fig.suptitle(f'{name}: conflict hotspots '
+                     f'(light grey = trajectories'
+                     f'{", dark grey = road network" if road else ""})',
                      y=0.98)
         fig.tight_layout()
         fig.savefig(fig_dir / f'conflict_map_{name}.png', dpi=200)
@@ -127,4 +146,5 @@ def main(outputs_dir: str):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'outputs/lumpi')
+    main(sys.argv[1] if len(sys.argv) > 1 else 'outputs/lumpi',
+         sys.argv[2] if len(sys.argv) > 2 else 'data/lumpi/lumpi_polylines.csv')
