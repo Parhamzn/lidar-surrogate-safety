@@ -60,7 +60,7 @@ from run_lumpi_pipeline import FPS, LUMPI_TRAIN_CLASSES, MATCH_GATES  # noqa: E4
 from lidar_pilot.conflicts import (mine_conflicts,  # noqa: E402
                                    select_moving_road_users)
 from lidar_pilot.kinematics import longitudinal_accel  # noqa: E402
-from lidar_pilot.tracking import Tracker3D  # noqa: E402
+from lidar_pilot.tracking import Tracker3D, rts_smooth  # noqa: E402
 
 R_MAX = 45.0      # sensing envelope, as in plot_e2e_validation.py
 CELL = 8.0        # agreement-map cell size, as in plot_e2e_validation.py
@@ -207,6 +207,9 @@ class Config:
     min_dur: float = 0.2     # HBE estimator: sustained duration
     speed_source: str = 'positions'
     despike: bool = False    # HBE estimator: median-filter speed first
+    rts: bool = False        # offline RTS smoothing of finished tracks
+    rts_accel_std: float = 4.5
+    rts_meas_std: float = 0.4
 
 
 DEFAULT_SWEEP = [
@@ -295,6 +298,9 @@ def _init_worker(cache_path):
 def _run_config(cfg: Config, gt_path: str, out_dir: str | None) -> dict:
     t0 = time.perf_counter()
     trajs = retrack(_FRAMES, cfg)
+    if cfg.rts:
+        trajs = [rts_smooth(tr, accel_std=cfg.rts_accel_std,
+                            meas_std=cfg.rts_meas_std) for tr in trajs]
     rows, st = mine_conflicts(trajs, cfg.name,
                               hbe_smooth_window=cfg.smooth,
                               hbe_min_duration=cfg.min_dur,

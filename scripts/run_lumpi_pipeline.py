@@ -106,12 +106,23 @@ def main():
     ap.add_argument('--max-age', type=int, default=5)
     ap.add_argument('--min-hits', type=int, default=3)
     ap.add_argument('--gate-growth', type=float, default=0.0)
-    # 4.5 m/s^2 process noise: calibrated against the GT braking reference
-    # (the stock 3.0 lags hard maneuvers and halves hard-braking recall;
+    # 4.5 m/s^2 process noise for the online association filter: calibrated
+    # against the GT braking reference (the stock 3.0 lags hard maneuvers;
     # see scripts/sweep_hbe_recovery.py)
     ap.add_argument('--kf-accel-std', type=float, default=4.5)
-    ap.add_argument('--record-source', default='posterior',
+    # Validated operating point: record raw matched detections and smooth
+    # them offline with an RTS pass — a causal filter must lag maneuvers,
+    # a forward-backward smoother does not. The rts noise model
+    # (meas 0.15 m, accel allowance 15 m/s^2) is a calibrated q/r
+    # bandwidth, chosen by count parity + event-level F1 against the
+    # ground-truth conflict reference.
+    ap.add_argument('--record-source', default='detection',
                     choices=['posterior', 'detection'])
+    ap.add_argument('--rts', default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help='RTS-smooth finished tracks (--no-rts to disable)')
+    ap.add_argument('--rts-accel-std', type=float, default=15.0)
+    ap.add_argument('--rts-meas-std', type=float, default=0.15)
     args = ap.parse_args()
 
     if args.from_detections:
@@ -158,6 +169,10 @@ def main():
                   flush=True)
 
     trajs = tracker.trajectories
+    if args.rts:
+        from lidar_pilot.tracking import rts_smooth
+        trajs = [rts_smooth(tr, accel_std=args.rts_accel_std,
+                            meas_std=args.rts_meas_std) for tr in trajs]
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     with open(out / f'tracks_{args.name}.pkl', 'wb') as f:

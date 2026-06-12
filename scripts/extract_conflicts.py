@@ -9,12 +9,12 @@ severity thresholds) lives in lidar_pilot.conflicts.
 
 Usage: python scripts/extract_conflicts.py outputs/nuscenes_mini
 
-Ground-truth trajectories use the defaults. Tracker output needs the
-braking estimator calibrated for filter lag and detection jitter
-(operating point from scripts/sweep_hbe_recovery.py):
+Ground-truth trajectories use the defaults (their human-fitted boxes get
+one smoothing stage, the MA-3 window). RTS-smoothed tracker output is
+already smoothed, so it skips the extra window — everything else is
+identical (operating point from scripts/sweep_hbe_recovery.py):
 
-  python scripts/extract_conflicts.py outputs/lumpi_e2e \\
-      --hbe-min-duration 0.1 --hbe-despike
+  python scripts/extract_conflicts.py outputs/lumpi_e2e --hbe-smooth-window 1
 """
 
 from __future__ import annotations
