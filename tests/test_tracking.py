@@ -124,3 +124,70 @@ def test_trajectory_export():
     assert len(trajs[0]) == 10
     # ~10 m/s east; allow the filter a few frames to converge
     assert trajs[0].extras["velocity"][-1][0] == pytest.approx(10.0, abs=1.0)
+
+
+def test_gate_growth_reacquires_after_occlusion():
+    """A car braking hard while occluded for 1.1 s ends up ~5 m behind the
+    constant-velocity prediction; a fixed 2 m gate loses it, a miss-grown
+    gate re-acquires it."""
+    def run(gate_growth: float):
+        tracker = Tracker3D(max_match_distance=2.0, min_hits=2, max_age=15,
+                            gate_growth=gate_growth)
+        ids = set()
+        v0, decel, x = 12.0, -8.0, 0.0
+        for k in range(35):
+            t = k * DT
+            v = v0 if t < 1.0 else max(v0 + decel * (t - 1.0), 0.0)
+            x += v * DT
+            if 10 <= k < 21:   # occluded through the braking onset
+                tracker.step(np.zeros((0, 7)), np.array([]), [], t)
+                continue
+            active = tracker.step(make_box(x, 0.0)[None], np.array([0.9]),
+                                  ["car"], t, velocities=np.array([[v, 0.0]]))
+            ids.update(tr.track_id for tr in active)
+        return ids
+
+    assert len(run(gate_growth=0.5)) == 1
+    assert len(run(gate_growth=0.0)) == 2
+
+
+def test_kf_params_accel_std_responsiveness():
+    """Higher accel_std lets the velocity estimate follow a hard brake
+    with less lag, so the tracked speed drops sooner."""
+    def final_speed(accel_std: float) -> float:
+        tracker = Tracker3D(max_match_distance=5.0, min_hits=1,
+                            kf_params=dict(accel_std=accel_std))
+        v0, decel = 12.0, -8.0
+        x = 0.0
+        for k in range(30):
+            t = k * DT
+            v = v0 if t < 1.0 else max(v0 + decel * (t - 1.0), 0.0)
+            x += v * DT
+            tracker.step(make_box(x, 0.0)[None], np.array([0.9]), ["car"], t,
+                         velocities=np.array([[v0, 0.0]]) if k == 0 else None)
+        (tr,) = tracker._active
+        return float(np.linalg.norm(tr.kf.velocity[:2]))
+
+    # true speed at t=2.9 is 0; the sluggish filter overestimates it more
+    assert final_speed(9.0) < final_speed(3.0) - 0.5
+
+
+def test_record_source_detection_keeps_raw_positions():
+    """With record_source='detection' the history holds the matched boxes
+    verbatim, not filter-smoothed positions."""
+    raw = Tracker3D(min_hits=2, record_source='detection')
+    smooth = Tracker3D(min_hits=2)
+    xs = []
+    for k in range(12):
+        x = k * 1.0 + (0.3 if k % 2 else -0.3)   # zigzag measurement noise
+        xs.append(x)
+        for tracker in (raw, smooth):
+            tracker.step(make_box(x, 0.0)[None], np.array([0.9]), ["car"], k * DT)
+    (tr_raw,), (tr_smooth,) = raw.trajectories, smooth.trajectories
+    assert np.allclose(tr_raw.xy[:, 0], xs)
+    assert not np.allclose(tr_smooth.xy[:, 0], xs)
+
+
+def test_record_source_validated():
+    with pytest.raises(ValueError):
+        Tracker3D(record_source='raw')

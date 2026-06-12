@@ -32,8 +32,11 @@ class Track:
     # kept alongside the KF estimate so the two can be compared.
     last_det_velocity: np.ndarray | None = None
 
-    def record(self, t: float) -> None:
-        self.history.append([t, *self.kf.box, *self.kf.velocity])
+    def record(self, t: float, box: np.ndarray | None = None) -> None:
+        """Append one history row; box defaults to the KF posterior."""
+        if box is None:
+            box = self.kf.box
+        self.history.append([t, *box, *self.kf.velocity])
 
     def to_trajectory(self) -> Trajectory:
         h = np.asarray(self.history)
@@ -53,7 +56,10 @@ class Tracker3D:
                  max_match_distance: float | dict[str, float] = 2.5,
                  max_age: int = 3,
                  min_hits: int = 2,
-                 min_score: float = 0.3):
+                 min_score: float = 0.3,
+                 gate_growth: float = 0.0,
+                 kf_params: dict | None = None,
+                 record_source: str = 'posterior'):
         """max_match_distance: BEV gating radius in metres, either one
         scalar or a per-class dict (key 'default' for unlisted classes).
         Class-dependent gates matter at low frame rates: a gate wide enough
@@ -62,11 +68,29 @@ class Tracker3D:
         max_age: consecutive missed frames before a track is terminated.
         min_hits: matches needed before a track counts as confirmed.
         min_score: detections below this confidence are ignored.
+        gate_growth: fractional gate widening per consecutive miss. A track
+        coasting through occlusion accumulates prediction error (the object
+        may be braking or turning while unobserved), so the re-acquisition
+        gate must grow with the miss count or a long max_age cannot
+        actually re-acquire anything; 0 keeps gates fixed.
+        kf_params: extra keyword arguments for each track's KalmanBox3D
+        (e.g. accel_std), letting callers trade smoothness against
+        responsiveness to real maneuvers.
+        record_source: which box goes into the track history. 'posterior'
+        stores the KF estimate (smooth, but a constant-velocity filter
+        lags real maneuvers and smears e.g. braking peaks); 'detection'
+        stores the matched detection box, keeping the filter for
+        prediction and association only.
         """
+        if record_source not in ('posterior', 'detection'):
+            raise ValueError(f'unknown record_source: {record_source!r}')
         self.max_match_distance = max_match_distance
         self.max_age = max_age
         self.min_hits = min_hits
         self.min_score = min_score
+        self.gate_growth = gate_growth
+        self.kf_params = kf_params or {}
+        self.record_source = record_source
         self._next_id = 1
         self._active: list[Track] = []
         self._finished: list[Track] = []
@@ -109,14 +133,16 @@ class Tracker3D:
                 tr.confirmed = True
             if velocities is not None:
                 tr.last_det_velocity = velocities[di].copy()
-            tr.record(t)
+            tr.record(t, boxes[di] if self.record_source == 'detection' else None)
 
         for ti in unmatched_tracks:
             self._active[ti].misses += 1
 
         for di in unmatched_dets:
             init_v = velocities[di] if velocities is not None else None
-            tr = Track(self._next_id, labels[di], KalmanBox3D(boxes[di], init_velocity=init_v))
+            tr = Track(self._next_id, labels[di],
+                       KalmanBox3D(boxes[di], init_velocity=init_v,
+                                   **self.kf_params))
             if velocities is not None:
                 tr.last_det_velocity = velocities[di].copy()
             self._next_id += 1
@@ -144,7 +170,7 @@ class Tracker3D:
         cost = np.full((n_t, n_d), 1e6)
         for i, tr in enumerate(self._active):
             pred_xy = tr.kf.box[:2]
-            gate = self._gate(tr.label)
+            gate = self._gate(tr.label) * (1.0 + self.gate_growth * tr.misses)
             for j in range(n_d):
                 if labels[j] != tr.label:
                     continue  # never match across classes
