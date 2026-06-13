@@ -71,7 +71,7 @@ A nuScenes-pretrained detector collapses on roadside multi-LiDAR data (pedestria
 | bus | 0.07 | **0.51** |
 | truck | 0.14 | **0.41** |
 
-…and ~12k phantom detections of classes that don't exist in the scene (barriers, traffic cones) are eliminated. Rare classes (motorcycle n = 34, scooter) did not learn from so few instances, class-balanced resampling (CBGS) is the known fix and listed as future work.
+…and ~12k phantom detections of classes that don't exist in the scene (barriers, traffic cones) are eliminated. Rare classes (motorcycle n = 34, scooter) did not learn from so few instances. Class-balanced resampling (CBGS) was tested and did not help: replicating ~34 real motorcycles cannot create new signal, so motorcycle stayed near 0 F1 while the common classes dipped slightly. The principled fix is more diverse rare-class data, for example synthetic digital-twin augmentation, noted as future work.
 
 <p align="center"><img src="figures/detection_domain_shift.png" width="780"/></p>
 
