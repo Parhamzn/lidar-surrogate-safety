@@ -59,6 +59,22 @@ def frame_pairs(data_root, subsets, sensor, stride):
     return pairs[::stride]
 
 
+def pairs_from_list(frame_list):
+    """(pcd, json) pairs from a manifest of .pcd paths (label path derived
+    by swapping point_clouds->labels_point_clouds and .pcd->.json)."""
+    pairs = []
+    for line in Path(frame_list).read_text().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        pcd = Path(line)
+        jp = Path(str(pcd).replace('/point_clouds/', '/labels_point_clouds/')
+                  ).with_suffix('.json')
+        if jp.exists():
+            pairs.append((pcd, jp))
+    return pairs
+
+
 def label_ground_z(json_paths, sample=60):
     """Ground height = median box-bottom (centre_z - h/2) over vehicles in a
     sample of frames; robust to the gantry geometry that defeats modal-z."""
@@ -74,6 +90,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data-root', required=True)
     ap.add_argument('--subsets', default='s01,s02,s03,s04')
+    ap.add_argument('--frame-list', default=None,
+                    help='evaluate exactly the .pcd paths in this manifest '
+                         '(e.g. a time-split val_frames.txt) instead of subsets')
     ap.add_argument('--sensor', default=SENSOR)
     ap.add_argument('--out-dir', default='outputs/tumtraf_eval')
     ap.add_argument('--config', default='/mnt/T9/parham/lidar-pilot/mmdetection3d/configs/'
@@ -92,8 +111,9 @@ def main():
                       else LUMPI_TRAIN_CLASSES)
     scored = SHARED + (['scooter'] if args.det_classes == 'lumpi' else [])
 
-    pairs = frame_pairs(args.data_root, args.subsets.split(','),
-                        args.sensor, args.stride)
+    pairs = (pairs_from_list(args.frame_list)[::args.stride] if args.frame_list
+             else frame_pairs(args.data_root, args.subsets.split(','),
+                              args.sensor, args.stride))
     if not pairs:
         raise SystemExit('no (pcd, json) frame pairs found')
 

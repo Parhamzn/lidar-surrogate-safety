@@ -33,7 +33,7 @@ from shapely.geometry import Polygon
 
 sys.path.insert(0, str(Path(__file__).parent))
 from eval_lumpi_detection import LUMPI_TRAIN_CLASSES, NUS_CLASSES, NUS_GROUND_Z  # noqa: E402
-from eval_tumtraf_detection import frame_pairs, label_ground_z  # noqa: E402
+from eval_tumtraf_detection import frame_pairs, label_ground_z, pairs_from_list  # noqa: E402
 
 from lidar_pilot.io.tumtraf import read_openlabel_boxes, read_pcd  # noqa: E402
 
@@ -80,6 +80,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data-root', default='/mnt/T9/parham/lidar-pilot/data/tumtraf')
     ap.add_argument('--subsets', default='s04')
+    ap.add_argument('--frame-list', default=None,
+                    help='evaluate exactly the .pcd paths in this manifest')
     ap.add_argument('--sensor', default='s110_lidar_ouster_south')
     ap.add_argument('--out-dir', default='outputs/tumtraf_eval')
     ap.add_argument('--config', default='/mnt/T9/parham/lidar-pilot/mmdetection3d/configs/'
@@ -95,7 +97,8 @@ def main():
 
     det_class_list = (NUS_CLASSES if args.det_classes == 'nuscenes'
                       else LUMPI_TRAIN_CLASSES)
-    pairs = frame_pairs(args.data_root, args.subsets.split(','), args.sensor, args.stride)
+    pairs = (pairs_from_list(args.frame_list)[::args.stride] if args.frame_list
+             else frame_pairs(args.data_root, args.subsets.split(','), args.sensor, args.stride))
     z_shift = NUS_GROUND_Z - label_ground_z([jp for _, jp in pairs])
     print(f'{len(pairs)} frames | z-shift {z_shift:+.2f} | head={args.det_classes} | AP@{IOU_THR}')
 
