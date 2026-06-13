@@ -51,3 +51,18 @@ def test_short_and_duplicate_rows(tmp_path):
     trajs = load_lumpi_trajectories(make_csv(tmp_path, rows), min_len=5)
     assert [tr.track_id for tr in trajs] == [4]
     assert np.all(np.diff(trajs[0].t) > 0)
+
+
+def test_class7_maps_to_car(tmp_path):
+    """Measurement4's undocumented class id 7 (a single van-sized track)
+    must map to 'car', not fall through to 'unknown'."""
+    from lidar_pilot.io import load_lumpi_trajectories
+    csv = tmp_path / "label.csv"
+    header = "time,id,x,y,w,h,score,class,vis,cx,cy,cz,l,bw,bh,head\n"
+    rows = "".join(
+        f"{i*0.1:.1f},1,0,0,0,0,0.9,7,1,{i*0.5:.2f},0,0,4.88,2.1,2.17,0\n"
+        for i in range(8))
+    csv.write_text(header + rows)
+    trajs = load_lumpi_trajectories(csv)
+    assert len(trajs) == 1
+    assert trajs[0].label == "car"

@@ -15,7 +15,10 @@ Class ids: the README documents the COCO-subset classes 1-based
 (person=1 ... truck=6), but the shipped CSVs are 0-based, verified
 against median box dimensions per class (class 0 is person-sized, 1 is
 car-sized, ...). Class 6 is undocumented and bike-sized; we call it
-"scooter" and treat it as a VRU.
+"scooter" and treat it as a VRU. Class 7 appears only in Measurement4
+(a single 12 s track, undocumented): median box 4.88 x 2.10 x 2.17 m is
+a van / large car, so it is mapped to "car". Any further unknown id
+falls back to "unknown" (kept, but carries no class-speed gate).
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from lidar_pilot.trajectory import Trajectory
 
 LUMPI_CLASSES = {
     0: "pedestrian", 1: "car", 2: "bicycle", 3: "motorcycle",
-    4: "bus", 5: "truck", 6: "scooter",
+    4: "bus", 5: "truck", 6: "scooter", 7: "car",
 }
 
 
