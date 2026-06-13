@@ -5,10 +5,10 @@
 <p align="center">
   <img src="media/refscan_3d.gif" width="640" alt="Tracked road users and their trajectories over the LiDAR reference scan of Königsworther Platz, Hanover"/>
   <br/>
-  <em>Tracked road users (boxes, class-colored trails) over the survey-grade reference scan of the study intersection — Königsworther Platz, Hanover, from the LUMPI dataset [5]. (<a href="media/refscan_3d_spin.mp4">full clip</a>, <a href="media/refscan_3d_capture.mp4">second view</a>)</em>
+  <em>Tracked road users (boxes, class-colored trails) over the survey-grade reference scan of the study intersection, Königsworther Platz, Hanover, from the LUMPI dataset [5]. (<a href="media/refscan_3d_spin.mp4">full clip</a>, <a href="media/refscan_3d_capture.mp4">second view</a>)</em>
 </p>
 
-**Headline result** — running the full machine pipeline on raw point clouds (no labels anywhere) and mining the same conflict definitions as on the human-labeled trajectories reproduces the intersection's safety picture at count parity on all three metrics, within the detector's 45 m sensing envelope:
+**Headline result**: running the full machine pipeline on raw point clouds (no labels anywhere) and mining the same conflict definitions as on the human-labeled trajectories reproduces the intersection's safety picture at count parity on all three metrics, within the detector's 45 m sensing envelope:
 
 | | TTC conflicts | PET conflicts | Hard-braking events |
 |---|---|---|---|
@@ -27,7 +27,7 @@ point clouds ──► CenterPoint (pillar encoder) [1], MMDetection3D [2]
                     │   Hungarian association, per-class gates,
                     │   velocity-head seeding, yaw-flip handling
                     ▼
-              RTS smoother (offline forward–backward pass [9], this repo)
+              RTS smoother (offline forward-backward pass [9], this repo)
                     │   causal filters must lag maneuvers; recorded data
                     │   has a future, so braking peaks survive
                     ▼
@@ -41,28 +41,28 @@ point clouds ──► CenterPoint (pillar encoder) [1], MMDetection3D [2]
 
 Everything downstream of the detector is implemented from scratch in `src/lidar_pilot/` (no tracking/filtering dependencies) and covered by 44 closed-form synthetic tests.
 
-## Detected conflicts — machine vs reality
+## Detected conflicts: machine vs reality
 
 The two most severe vulnerable-road-user conflicts in the ground truth are independently rediscovered by the label-free pipeline. Each clip shows tracked boxes and trails over the frozen reference scan; the conflict pair is highlighted with the running TTC/PET readout.
 
-| Bicycle–bicycle, PET 0.01 s | Bicycle–pedestrian, TTC 0.04 s |
+| Bicycle-bicycle, PET 0.01 s | Bicycle-pedestrian, TTC 0.04 s |
 |---|---|
 | <img src="media/conflict_bike_bike.gif" width="420"/> | <img src="media/conflict_bike_ped.gif" width="420"/> |
 | one cyclist crosses the other's path with a 0.01 s margin ([full clip](media/conflict_bike_bike.mp4)) | near-miss on the crossing island ([full clip](media/conflict_bike_ped.mp4)) |
 
-A vehicle–pedestrian example is in [`media/conflict_car_ped.mp4`](media/conflict_car_ped.mp4). Interactive 3D recordings (point clouds + boxes + trails in the [rerun](https://rerun.io) viewer) can be regenerated with `scripts/make_lumpi_rrd.py`.
+A vehicle-pedestrian example is in [`media/conflict_car_ped.mp4`](media/conflict_car_ped.mp4). Interactive 3D recordings (point clouds + boxes + trails in the [rerun](https://rerun.io) viewer) can be regenerated with `scripts/make_lumpi_rrd.py`.
 
 ## Results
 
 ### 1 · Speed estimation validated on nuScenes
 
-Pretrained CenterPoint + this repo's tracker on nuScenes-mini (10 scenes, 2 Hz keyframes): Kalman-smoothed track speeds reach **RMSE 0.71 m/s** against ground-truth box velocities (n = 4,297), beating the detector's own velocity head (0.88 m/s) — the head seeds association, the filter does the kinematics.
+Pretrained CenterPoint + this repo's tracker on nuScenes-mini (10 scenes, 2 Hz keyframes): Kalman-smoothed track speeds reach **RMSE 0.71 m/s** against ground-truth box velocities (n = 4,297), beating the detector's own velocity head (0.88 m/s), the head seeds association, the filter does the kinematics.
 
 <p align="center"><img src="figures/speed_validation.png" width="700"/></p>
 
 ### 2 · Domain shift: ego-vehicle → roadside is not free
 
-A nuScenes-pretrained detector collapses on roadside multi-LiDAR data (pedestrian recall 0.00 — every pedestrian missed). Fine-tuning on 3,000 LUMPI frames (time-split train/val, 20 epochs, ~2 h on one GPU) repairs it:
+A nuScenes-pretrained detector collapses on roadside multi-LiDAR data (pedestrian recall 0.00, every pedestrian missed). Fine-tuning on 3,000 LUMPI frames (time-split train/val, 20 epochs, ~2 h on one GPU) repairs it:
 
 | class (n in val) | F1 pretrained | F1 fine-tuned |
 |---|---|---|
@@ -71,13 +71,13 @@ A nuScenes-pretrained detector collapses on roadside multi-LiDAR data (pedestria
 | bus | 0.07 | **0.51** |
 | truck | 0.14 | **0.41** |
 
-…and ~12k phantom detections of classes that don't exist in the scene (barriers, traffic cones) are eliminated. Rare classes (motorcycle n = 34, scooter) did not learn from so few instances — class-balanced resampling (CBGS) is the known fix and listed as future work.
+…and ~12k phantom detections of classes that don't exist in the scene (barriers, traffic cones) are eliminated. Rare classes (motorcycle n = 34, scooter) did not learn from so few instances, class-balanced resampling (CBGS) is the known fix and listed as future work.
 
 <p align="center"><img src="figures/detection_domain_shift.png" width="780"/></p>
 
 ### 3 · Ground-truth conflict study: where the risk lives
 
-Mining the human-annotated LUMPI trajectories (Measurement5: 12.6 min, 5 fused LiDARs, 10 Hz — LUMPI numbers its recording campaigns 0–6; #5 is the densest) yields 1,592 moving road users with trustworthy class labels, producing **2,774 TTC conflicts (< 3 s), 743 PET events (< 3 s) and 1,044 hard-braking events**.
+Mining the human-annotated LUMPI trajectories (Measurement5: 12.6 min, 5 fused LiDARs, 10 Hz, LUMPI numbers its recording campaigns 0-6; #5 is the densest) yields 1,592 moving road users with trustworthy class labels, producing **2,774 TTC conflicts (< 3 s), 743 PET events (< 3 s) and 1,044 hard-braking events**.
 
 Tagging every conflict with its road facility from the OpenDRIVE map:
 
@@ -106,21 +106,39 @@ The capstone experiment: run detection + tracking + smoothing + mining on raw po
 Per-cell agreement is computed on an 8 m grid; the count ratios and spatial correlations in the header are the headline table above. Beyond counts, events are matched **one-to-one** (Hungarian assignment on same-vehicle + braking-onset time), which is a stricter and more honest test than count parity:
 
 - hard-braking event recall 0.34 / precision 0.34 against the noisy human reference
-  (a naive tracker baseline manages 0.16 / 0.43 — F1 0.23 vs 0.34)
+  (a naive tracker baseline manages 0.16 / 0.43, F1 0.23 vs 0.34)
 - every miss is attributed to a cause (no track / filtered track / estimate damped / noise spike / unmatched), so improvements target mechanisms, not metrics
 
 Three things made the braking column reach parity, found via the experiment harness (`scripts/sweep_hbe_recovery.py`, ~50 configurations evaluated from a one-pass detection cache):
 
-1. **An epsilon-tolerant event-duration gate.** With 10 Hz timestamps, `(k+2)/10 − k/10` lands on either side of 0.2 by floating-point dust depending on the start frame — silently deleting ~40–50 % of exact-length braking events from *any* source, including the ground truth. Regression-tested fix in `metrics/events.py`.
-2. **Tracking-by-detection + offline RTS smoothing.** A causal Kalman filter must lag real maneuvers, smearing deceleration peaks below the −3 m/s² threshold (miss attribution showed the braking vehicle was *always* tracked — coverage was never the problem). The pipeline therefore records raw matched detections and smooths finished tracks with a Rauch–Tung–Striebel forward–backward pass [9] (`tracking/smoother.py`).
+1. **An epsilon-tolerant event-duration gate.** With 10 Hz timestamps, `(k+2)/10 − k/10` lands on either side of 0.2 by floating-point dust depending on the start frame, silently deleting ~40-50 % of exact-length braking events from *any* source, including the ground truth. Regression-tested fix in `metrics/events.py`.
+2. **Tracking-by-detection + offline RTS smoothing.** A causal Kalman filter must lag real maneuvers, smearing deceleration peaks below the −3 m/s² threshold (miss attribution showed the braking vehicle was *always* tracked, coverage was never the problem). The pipeline therefore records raw matched detections and smooths finished tracks with a Rauch-Tung-Striebel forward-backward pass [9] (`tracking/smoother.py`).
 3. **Noise calibration against reference events.** The smoother's q/r bandwidth was calibrated on ground-truth-confirmed braking windows; a textbook 0.4 m measurement-noise guess recovers 8 % of true braking windows, the calibrated 0.15 m / 15 m/s² recovers ~85 %.
 
 Throughput: ~5.7 fps end-to-end on a single RTX 5090 (detection-bound); re-tracking experiments from the detection cache run at ~250 fps on a laptop CPU.
 
+### 5 · Cross-site generalization: trained on Hanover, tested on Munich
+
+A pipeline is only as scalable as its detector's ability to move between sites. To test that, the LUMPI-fine-tuned detector is run unchanged on a different city's intersection: the [TUMTraf Intersection dataset](https://innovation-mobility.com/en/project-providentia/a9-dataset/) [10] from the A9 testbed near Munich (OpenLABEL labels, `.pcd` clouds, gantry-mounted LiDARs). The adapter (`io/tumtraf.py`) and detection eval (`scripts/eval_tumtraf_detection.py`) follow the same protocol as the LUMPI eval, so the numbers are directly comparable.
+
+**Zero-shot transfer is partial.** Run with no TUMTraf training at all, the LUMPI-fine-tuned head roughly doubles car F1 (0.33 to 0.57) and rescues pedestrians from near-zero (0.01 to 0.16), so it learned roadside-general structure rather than memorizing Hanover. But every class sits well below its in-site number (car 0.57 vs 0.85 in-site), so the model is not site-invariant.
+
+<p align="center"><img src="figures/cross_site_tumtraf.png" width="780"/></p>
+
+**A little in-domain data closes most of the gap, including for vulnerable road users.** Fine-tuning briefly on TUMTraf (a temporal split that keeps pedestrians in both the train and held-out sets) lifts held-out pedestrian detection from F1 0.06 to 0.53 (AP@0.1 from 2.6 to 41.7), the same rescue pattern seen for vehicles. Overall mAP@0.1 on the held-out classes goes from 5.9 (pretrained) to 15.1 (zero-shot) to 59.0 (fine-tuned), in the range of the dataset's own PointPillars baseline (46.9 single-LiDAR, 55.2 early-fusion, scored over 6 classes), though our figure is over the held-out subset's classes and so is indicative rather than a like-for-like aggregate.
+
+<p align="center"><img src="figures/gap_closing_vru_tumtraf.png" width="820"/></p>
+
+**Camera plus LiDAR fusion.** TUMTraf ships synchronized cameras, so the detector's own 3D boxes can be projected into the camera image using the calibration embedded in the OpenLABEL (`io/tumtraf.camera_projection_matrix`, `scripts/project_lidar_to_camera.py`). This registers the LiDAR detections into the image frame, the geometric basis of sensor fusion.
+
+<p align="center"><img src="figures/fusion_tumtraf.png" width="820"/></p>
+
+Honest caveats: TUMTraf uses two LiDARs versus LUMPI's five fused, so part of the cross-site gap is point density rather than geography; the in-domain split is a within-recording temporal split (milder leakage than a separate-recording held-out); bus and bicycle clustered into the training portion and are not measured on the held-out set. License CC BY-NC-ND 4.0, so only aggregate-metric figures are shown here, not raw data or labels.
+
 ## Honest limitations
 
 - 12.6 minutes of one afternoon; no exposure normalization; surrogate conflicts are *correlates* of crash risk, not crashes [6].
-- Count parity ≠ event identity: at matched counts, one-to-one event agreement for hard braking is 0.34 recall / 0.34 precision — partly genuine pipeline misses, partly label noise in the reference itself (27 % of moving ground-truth tracks fail class-kinematics plausibility and are excluded from mining on both sides).
+- Count parity ≠ event identity: at matched counts, one-to-one event agreement for hard braking is 0.34 recall / 0.34 precision, partly genuine pipeline misses, partly label noise in the reference itself (27 % of moving ground-truth tracks fail class-kinematics plausibility and are excluded from mining on both sides).
 - TTC's point-mass + combined-radius model inflates car-following conflicts; PET is exact at path crossings.
 - The tops of severity-sorted lists attract artifacts; the miner is hardened (duplicate/fragment suppression, kinematic class-plausibility, physical deceleration bounds), but the principle stands.
 - Rare classes (motorcycle, scooter) remain unreliable after fine-tuning.
@@ -179,9 +197,10 @@ GPU stack: detection runs on CUDA via MMDetection3D v1.4.0. On Blackwell GPUs (R
 
 ## Data, licenses, attribution
 
-- **LUMPI** [5] — multi-perspective roadside intersection dataset (point clouds, labels, maps), [data.uni-hannover.de/dataset/lumpi](https://data.uni-hannover.de/dataset/lumpi), **CC BY-NC 3.0**. The videos, GIFs and map-based figures in this repository are non-commercial derivatives of LUMPI data, attributed here. One verified erratum used throughout this repo: `Label.csv` class ids are 0-based (0 = pedestrian, 1 = car, 2 = bicycle, 3 = motorcycle, 4 = bus, 5 = truck, 6 = scooter), confirmed empirically against box dimensions.
-- **nuScenes** [4] — [nuscenes.org](https://www.nuscenes.org), non-commercial terms of use.
-- **Orthophoto** — Lower Saxony open geodata WMS (`ni_dop20`), © GeoBasis-DE / LGLN (2026), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **LUMPI** [5]: multi-perspective roadside intersection dataset (point clouds, labels, maps), [data.uni-hannover.de/dataset/lumpi](https://data.uni-hannover.de/dataset/lumpi), **CC BY-NC 3.0**. The videos, GIFs and map-based figures in this repository are non-commercial derivatives of LUMPI data, attributed here. One verified erratum used throughout this repo: `Label.csv` class ids are 0-based (0 = pedestrian, 1 = car, 2 = bicycle, 3 = motorcycle, 4 = bus, 5 = truck, 6 = scooter), confirmed empirically against box dimensions.
+- **nuScenes** [4]: [nuscenes.org](https://www.nuscenes.org), non-commercial terms of use.
+- **TUMTraf Intersection** [10]: A9 testbed roadside dataset (OpenLABEL, point clouds, images), [innovation-mobility.com](https://innovation-mobility.com/en/project-providentia/a9-dataset/), **CC BY-NC-ND 4.0**. Only aggregate-metric figures appear here; raw data and labels are not redistributed.
+- **Orthophoto**: Lower Saxony open geodata WMS (`ni_dop20`), © GeoBasis-DE / LGLN (2026), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## References
 
@@ -193,7 +212,7 @@ GPU stack: detection runs on CUDA via MMDetection3D v1.4.0. On Blackwell GPUs (R
 
 [4] H. Caesar et al., "nuScenes: A Multimodal Dataset for Autonomous Driving," *CVPR*, 2020. [arXiv:1903.11027](https://arxiv.org/abs/1903.11027)
 
-[5] S. Busch, C. Koetsier, J. Axmann, C. Brenner, "LUMPI: The Leibniz University Multi-Perspective Intersection Dataset," *IEEE Intelligent Vehicles Symposium (IV)*, 2022, pp. 1127–1134. [doi:10.1109/IV51971.2022.9827157](https://doi.org/10.1109/IV51971.2022.9827157)
+[5] S. Busch, C. Koetsier, J. Axmann, C. Brenner, "LUMPI: The Leibniz University Multi-Perspective Intersection Dataset," *IEEE Intelligent Vehicles Symposium (IV)*, 2022, pp. 1127-1134. [doi:10.1109/IV51971.2022.9827157](https://doi.org/10.1109/IV51971.2022.9827157)
 
 [6] L. Liu et al., "Smartphone-based Hard-braking Event Detection at Scale for Road Safety Services," *Transportation Research Part C*, 2022 (the −3 m/s² hard-braking definition). [arXiv:2202.01934](https://arxiv.org/abs/2202.01934)
 
@@ -202,3 +221,5 @@ GPU stack: detection runs on CUDA via MMDetection3D v1.4.0. On Blackwell GPUs (R
 [8] B. L. Allen, B. T. Shin, P. J. Cooper, "Analysis of Traffic Conflicts and Collisions," *Transportation Research Record* 667, 1978 (post-encroachment time).
 
 [9] H. E. Rauch, F. Tung, C. T. Striebel, "Maximum Likelihood Estimates of Linear Dynamic Systems," *AIAA Journal* 3(8), 1965 (RTS smoother).
+
+[10] W. Zimmer et al., "TUMTraf Intersection Dataset: All You Need for Urban 3D Camera-LiDAR Roadside Perception," *IEEE Intelligent Transportation Systems Conference (ITSC)*, 2023. [arXiv:2306.09266](https://arxiv.org/abs/2306.09266)
