@@ -241,6 +241,38 @@ def read_pcd(pcd_path: str | Path, z_shift: float = 0.0) -> np.ndarray:
     return pts[np.isfinite(pts[:, :3]).all(axis=1)]
 
 
+def camera_projection_matrix(json_path: str | Path, camera_id: str) -> np.ndarray:
+    """3x4 matrix projecting south-LiDAR homogeneous points to image pixels.
+
+    Calibration is embedded in the OpenLABEL: the camera intrinsics
+    (``streams[cam].stream_properties.intrinsics_pinhole.camera_matrix_3x4``)
+    and the camera's ``coordinate_systems[cam].pose_wrt_parent``. Despite
+    the OpenLABEL spec's child->parent convention, TUMTraf stores this pose
+    as the LiDAR->camera transform (verified empirically: K·pose lands GT
+    boxes on the vehicles, K·inv(pose) does not). The projection is
+    therefore K · pose — lidar point (4,) homogeneous -> pixel (3,).
+    """
+    ol = json.load(open(json_path))['openlabel']
+    K = np.array(ol['streams'][camera_id]['stream_properties']
+                 ['intrinsics_pinhole']['camera_matrix_3x4'], float)        # 3x4
+    pose_lidar_to_cam = np.array(
+        ol['coordinate_systems'][camera_id]['pose_wrt_parent']['matrix4x4'],
+        float).reshape(4, 4)
+    return K @ pose_lidar_to_cam                                            # 3x4
+
+
+def project_lidar_points(P: np.ndarray, xyz: np.ndarray,
+                         min_depth: float = 0.5):
+    """Project (N,3) LiDAR points with a 3x4 matrix. Returns (uv (M,2),
+    depth (M,), mask) for points in front of the camera (depth>min_depth)."""
+    homog = np.column_stack([xyz, np.ones(len(xyz))])
+    cam = (P @ homog.T).T                       # (N, 3): [u*z, v*z, z]
+    depth = cam[:, 2]
+    front = depth > min_depth
+    uv = cam[front, :2] / depth[front, None]
+    return uv, depth[front], front
+
+
 def summarize_class_dims(json_paths) -> dict[str, dict]:
     """Median box L/W/H per raw TUMTraf category — the empirical check that
     the class mapping is sane (a 'BICYCLE' must be bike-sized, etc.)."""
