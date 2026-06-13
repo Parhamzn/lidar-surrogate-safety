@@ -12,3 +12,4 @@ outputs/
 *.tgz
 .DS_Store
 *.mov
+figures/tumtraf_orthophoto_basemap.png

@@ -129,7 +129,7 @@ A pipeline is only as scalable as its detector's ability to move between sites. 
 
 <p align="center"><img src="figures/gap_closing_vru_tumtraf.png" width="820"/></p>
 
-**Camera plus LiDAR fusion.** TUMTraf ships synchronized cameras, so the detector's own 3D boxes can be projected into the camera image using the calibration embedded in the OpenLABEL (`io/tumtraf.camera_projection_matrix`, `scripts/project_lidar_to_camera.py`). This registers the LiDAR detections into the image frame, the geometric basis of sensor fusion.
+**Camera plus LiDAR fusion.** TUMTraf ships synchronized cameras, and the calibration embedded in the OpenLABEL (`io/tumtraf.camera_projection_matrix`) lets the detector's own 3D boxes be projected into the camera image (`scripts/project_lidar_to_camera.py`), the geometric basis of sensor fusion. The dataset license (CC BY-NC-ND) does not permit redistributing its camera frames, so the figure below shows the detector's 3D boxes in bird's-eye view; the camera-overlay version is reproducible locally from the dataset.
 
 <p align="center"><img src="figures/fusion_tumtraf.png" width="820"/></p>
 
